@@ -23,7 +23,7 @@ class NearestSampleLambdaTest {
 
     @Test
     void returnsExactMatch() {
-        NearestSampleLambda lambda = new NearestSampleLambda();
+        NearestSampleLambda lambda = new NearestSampleLambda(null);
 
         String body = """
                 {
@@ -46,7 +46,7 @@ class NearestSampleLambdaTest {
 
     @Test
     void returnsNearestNeighbor() {
-        NearestSampleLambda lambda = new NearestSampleLambda();
+        NearestSampleLambda lambda = new NearestSampleLambda(null);
 
         NearestSampleLambda.NearestResult result =
                 lambda.findNearestSample(
@@ -62,7 +62,7 @@ class NearestSampleLambdaTest {
 
     @Test
     void rejectsEmptySamples() {
-        NearestSampleLambda lambda = new NearestSampleLambda();
+        NearestSampleLambda lambda = new NearestSampleLambda(null);
 
         String body = """
                 {
@@ -78,7 +78,7 @@ class NearestSampleLambdaTest {
 
     @Test
     void rejectsInvalidSample() {
-        NearestSampleLambda lambda = new NearestSampleLambda();
+        NearestSampleLambda lambda = new NearestSampleLambda(null);
 
         String body = """
                 {
@@ -96,7 +96,7 @@ class NearestSampleLambdaTest {
 
     @Test
     void postAddsUuidAndKeepsOriginalFields() throws Exception {
-        NearestSampleLambda lambda = new NearestSampleLambda();
+        NearestSampleLambda lambda = new NearestSampleLambda(null);
 
         Map<String, Object> response =
                 lambda.handleRequest(event(VALID_BODY), null);
@@ -160,7 +160,7 @@ class NearestSampleLambdaTest {
 
     @Test
     void getReturnsUnavailableWithoutStorage() {
-        NearestSampleLambda lambda = new NearestSampleLambda();
+        NearestSampleLambda lambda = new NearestSampleLambda(null);
 
         Map<String, Object> response =
                 lambda.handleRequest(getEvent(SAMPLE_ID), null);

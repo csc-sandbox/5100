@@ -30,11 +30,20 @@ public class NearestSampleLambda
     private final Storage storage;
 
     public NearestSampleLambda() {
-        this(null);
+        this(createStorage());
     }
 
     NearestSampleLambda(Storage storage) {
         this.storage = storage;
+    }
+
+    // storage stays off until the table name is set in the lambda environment
+    private static Storage createStorage() {
+        String table = System.getenv("A04_DYNAMODB_TABLE");
+        if (table == null || table.isBlank()) {
+            return null;
+        }
+        return new NearestSampleStorage(table);
     }
 
     /**
