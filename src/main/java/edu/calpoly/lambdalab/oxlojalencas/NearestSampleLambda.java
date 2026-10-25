@@ -37,13 +37,15 @@ public class NearestSampleLambda
         this.storage = storage;
     }
 
-    // storage stays off until the table name is set in the lambda environment
+    // storage stays off until the table and bucket are set in the environment
     private static Storage createStorage() {
         String table = System.getenv("A04_DYNAMODB_TABLE");
-        if (table == null || table.isBlank()) {
+        String bucket = System.getenv("A04_S3_BUCKET");
+        if (table == null || table.isBlank()
+                || bucket == null || bucket.isBlank()) {
             return null;
         }
-        return new NearestSampleStorage(table);
+        return new NearestSampleStorage(table, bucket);
     }
 
     /**
