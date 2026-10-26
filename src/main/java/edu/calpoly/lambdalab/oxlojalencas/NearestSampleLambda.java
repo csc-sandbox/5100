@@ -59,13 +59,15 @@ public class NearestSampleLambda
         return new NearestSampleStorage(table, bucket);
     }
 
-    // messaging stays off until the topic arn is set in the environment
+    // messaging stays off until the topic arn and queue url are both set
     private static Messaging createMessaging() {
         String topicArn = System.getenv("A04_SNS_TOPIC_ARN");
-        if (topicArn == null || topicArn.isBlank()) {
+        String queueUrl = System.getenv("A04_SQS_QUEUE_URL");
+        if (topicArn == null || topicArn.isBlank()
+                || queueUrl == null || queueUrl.isBlank()) {
             return null;
         }
-        return new NearestSampleMessaging(topicArn);
+        return new NearestSampleMessaging(topicArn, queueUrl);
     }
 
     /**
