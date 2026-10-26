@@ -26,15 +26,26 @@ public class NearestSampleLambda
         String get(String id);
     }
 
+    /** publishes one event json string. */
+    interface Messaging {
+        void publish(String json);
+    }
+
     private final ObjectMapper mapper = new ObjectMapper();
     private final Storage storage;
+    private final Messaging messaging;
 
     public NearestSampleLambda() {
-        this(createStorage());
+        this(createStorage(), createMessaging());
     }
 
     NearestSampleLambda(Storage storage) {
+        this(storage, null);
+    }
+
+    NearestSampleLambda(Storage storage, Messaging messaging) {
         this.storage = storage;
+        this.messaging = messaging;
     }
 
     // storage stays off until the table and bucket are set in the environment
@@ -46,6 +57,15 @@ public class NearestSampleLambda
             return null;
         }
         return new NearestSampleStorage(table, bucket);
+    }
+
+    // messaging stays off until the topic arn is set in the environment
+    private static Messaging createMessaging() {
+        String topicArn = System.getenv("A04_SNS_TOPIC_ARN");
+        if (topicArn == null || topicArn.isBlank()) {
+            return null;
+        }
+        return new NearestSampleMessaging(topicArn);
     }
 
     /**
@@ -85,6 +105,7 @@ public class NearestSampleLambda
             Context context) {
         String id;
         String json;
+        String eventJson;
 
         try {
             String body = event.get("body").toString();
@@ -102,6 +123,7 @@ public class NearestSampleLambda
             output.put("id", id);
 
             json = mapper.writeValueAsString(output);
+            eventJson = buildEvent(id, result);
         } catch (Exception exception) {
             return errorResponse(400, "Invalid request");
         }
@@ -115,7 +137,25 @@ public class NearestSampleLambda
             return errorResponse(500, "Could not save result");
         }
 
+        try {
+            if (messaging != null) {
+                messaging.publish(eventJson);
+            }
+        } catch (Exception exception) {
+            logError(context, exception);
+            return errorResponse(500, "Could not publish event");
+        }
+
         return response(200, json);
+    }
+
+    private String buildEvent(String id, NearestResult result) throws Exception {
+        return mapper.writeValueAsString(Map.of(
+                "id", id,
+                "operation", "NearestSampleLambda",
+                "result", Map.of(
+                        "nearestSample", result.sample(),
+                        "timeDifference", result.timeDifference())));
     }
 
     private Map<String, Object> getResult(
