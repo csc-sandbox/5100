@@ -10,7 +10,7 @@ import java.util.UUID;
 final class DominantAffectMqttEvent {
 
     static final String OPERATION = "DominantAffectLambda";
-    static final String EVENT_TOPIC = "csc5100/events/" + OPERATION;
+    static final String EVENT_TOPIC = "csc5100/events/dominant-affect";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
