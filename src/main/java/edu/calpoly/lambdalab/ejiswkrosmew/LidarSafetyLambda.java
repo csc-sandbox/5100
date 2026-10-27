@@ -4,41 +4,158 @@ package edu.calpoly.lambdalab.ejiswkrosmew;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.s3.endpoints.internal.Value;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * AWS Lambda function that checks the safety of Lidar distances read
  * Gives a "warning" status if any distances read is too close (relative to a threshold)
+ * Heavily based on edu.calpoly.lambdalab.instructor.TemperatureLambda
  *
  * @author James Yaguma
- * @version 1.0 (2026-09-30)
+ * @version 1.1 (2026-10-27)
  */
 public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Map<String, Object>> {
+    interface Storage {
+        void save(String id, String json);
+
+        String get(String id);
+    }
+
+    interface Messaging {
+        void publish(String json);
+    }
+
     private final ObjectMapper mapper = new ObjectMapper();
+    private final Storage storage;
+    private final Messaging messaging;
+
+    LidarSafetyLambda() {
+        this(
+            System.getenv("A04_DYNAMODB_TABLE"),
+            System.getenv("A04_S3_BUCKET"),
+            System.getenv("A04_SNS_TOPIC_ARN"),
+            System.getenv("A04_SQS_QUEUE_URL")
+        );
+    }
+
+    LidarSafetyLambda(String table, String bucket, String topicArn, String queueUrl) {
+        this(table != null && !table.isBlank() && bucket != null && !bucket.isBlank()
+                ? new LidarSafetyStorage(table, bucket) : null,
+            topicArn != null && !topicArn.isBlank() && queueUrl != null && !queueUrl.isBlank()
+                ? new LidarSafetyMessaging(topicArn, queueUrl) : null);
+    }
+
+    LidarSafetyLambda(Storage storage) {
+        this(storage, null);
+    }
+
+    LidarSafetyLambda(Storage storage, Messaging messaging) {
+        this.storage = storage;
+        this.messaging = messaging;
+    }
 
     /**
      * Handle a request
      *
-     * @param input The Lambda Function input
+     * @param input   The Lambda Function input
      * @param context The Lambda execution environment context object.
      * @return The HTTP response as a Map<String, Object>
      */
     @Override
+    @SuppressWarnings("unchecked")
     public Map<String, Object> handleRequest(Map<String, Object> input, Context context) {
         try {
+            // Make sure input is actually something
+            if (input == null) {
+                return errorResponse(400, "Invalid Request");
+            }
 
-            Map<String, Object> body = mapper.readValue(input.get("body").toString(), Map.class);
+            // Try to grab query parameters if they exist
+            Object tempQuery = input.get("queryStringParameters");
+            Map<String, Object> query = Map.of();
+            if (tempQuery instanceof Map) {
+                query = (Map<String, Object>) tempQuery;
+            }
 
+            // Check the HTTP request method
+            String method = getReqMethod(input, !query.isEmpty());
+
+            // If it's a GET request by UUID, try to do it
+            if (method.equals("GET") && query.containsKey("id")) {
+                String id = String.valueOf(query.get("id"));
+                if (!isUuid(id)) { // ID is invalid
+                    return errorResponse(400, "Invalid id");
+                }
+                if (storage == null) { // Storage doesn't exist
+                    return errorResponse(500, "Storage not configured");
+                }
+                String json = storage.get(id);
+                if (json == null) { // Not found
+                    return errorResponse(404, "Not found");
+                }
+
+                // Success
+                return httpResponse(200, json);
+            }
+
+            // Use either the query or the JSON body for input
+            Map<String, Object> body = query;
+            if (method.equals("POST") && (input.get("httpMethod") != null || query.isEmpty())) {
+                body = mapper.readValue(input.get("body").toString(), Map.class);
+            }
+
+            // Convert body to distances and thresholds
             List<Double> distances = (List<Double>) body.get("distances");
             double threshold = (Double) body.get("threshold");
 
-            Map<String, Object> response = safetyCheck(distances, threshold);
+            // Get the response result as a Map
+            Map<String, Object> response = new HashMap<>(safetyCheck(distances, threshold));
+
+            // Create a UUID for the successful query and add it to the response
+            String id = UUID.randomUUID().toString();
+            response.put("id", id);
+
+            // Update storage if possible
+            if (storage != null) {
+                storage.save(id, mapper.writeValueAsString(response));
+                response.put("storage", Map.of(
+                    "dynamodb", "stored",
+                    "s3", "stored"
+                ));
+            } else {
+                response.put("storage", Map.of(
+                    "dynamodb", "not_configured",
+                    "s3", "not_configured"
+                ));
+
+            }
+
+            // Send messages if possible
+            if (messaging != null) {
+                messaging.publish(mapper.writeValueAsString(response));
+                response.put("messaging", Map.of(
+                    "sns", "published",
+                    "sqs", "queued"
+                ));
+            } else {
+                response.put("messaging", Map.of(
+                    "sns", "not_configured",
+                    "sqs", "not_configured"
+                ));
+
+            }
+
+            // Return the response as a JSON string
             return httpResponse(200, mapper.writeValueAsString(response));
         } catch (Exception e) {
-            // System.err.println("Invalid Request Received due to: " + e.getMessage());
-            return httpResponse(400, "{\"error\":\"Invalid request\"}");
+//            System.err.println("Invalid Request Received due to: " + e.getMessage());
+            return errorResponse(400, "Invalid request");
         }
     }
 
@@ -66,8 +183,8 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
             status = "WARNING";
         }
         return Map.of(
-                "status", status,
-                "minDist", minDist
+            "status", status,
+            "minDist", minDist
         );
     }
 
@@ -75,14 +192,76 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
      * Generate an HTTP response in the form of a Map<String, Object>
      *
      * @param statusCode The status code to use
-     * @param body The body of the HTTP response
+     * @param body       The body of the HTTP response
      * @return A Map<String, Object> representation of an HTTP response
      */
     private Map<String, Object> httpResponse(int statusCode, String body) {
         return Map.of(
-                "statusCode", statusCode,
-                "headers", Map.of("Content-Type", "application/json"),
-                "body", body
+            "statusCode", statusCode,
+            "headers", Map.of("Content-Type", "application/json"),
+            "body", body
         );
+    }
+
+    /**
+     * Helper function to streamline error HTTP responses
+     * Calls {@link #httpResponse(int, String)} but only needs an error message string instead of a whole JSON body
+     *
+     * @param statusCode The status code to use
+     * @param errorTxt   The error message that goes in the HTTP response bod
+     * @return A Map<String, Object> representation of an HTTP response
+     */
+    private Map<String, Object> errorResponse(int statusCode, String errorTxt) {
+        return httpResponse(statusCode, "{\"error\":\"" + errorTxt + "\"}");
+    }
+
+    /**
+     * Helper function to assist with figuring out if a request is a GET or POST
+     *
+     * @param input Same input variable that was passed in {@link #handleRequest(Map, Context)}
+     * @param queryExists Boolean that should only be true iff query parameters were found
+     * @return Either "GET" or "POST" depending on what was determined to be the method call
+     */
+    @SuppressWarnings("unchecked")
+    private String getReqMethod(Map<String, Object> input, boolean queryExists) {
+        // If httpMethod exists, use it
+        Object httpMethod = input.get("httpMethod");
+        if (httpMethod != null) {
+            return (String) httpMethod;
+        }
+        // Otherwise, try to find it in the request context
+
+        // If we can't figure it out we'll guess based on if a query exists or not
+        String defaultMethod = queryExists ? "GET" : "POST";
+
+        // Try to get request context
+        Object requestContext = input.get("requestContext");
+        if (!(requestContext instanceof Map)) {
+            return defaultMethod;
+        }
+
+        // If that worked, try to get the http field
+        Object http = ((Map<String, Object>) requestContext).get("http");
+        if (!(http instanceof Map)) {
+            return defaultMethod;
+        }
+
+        // If that work, try to get the method value, or go to default
+        return String.valueOf(((Map<String, Object>) http).getOrDefault("method", defaultMethod)).toUpperCase();
+    }
+
+    /**
+     * Helper function to check if string is a valid UUID
+     * Almost directly copied from edu.calpoly.lambdalab.instructor.TemperatureLambda
+     *
+     * @param id The UUID to test
+     * @return True if the UUID is a valid UUID. Otherwise returns false
+     */
+    private boolean isUuid(String id) {
+        try {
+            return UUID.fromString(id).toString().equals(id);
+        } catch (Exception e) {
+            return false;
+        }
     }
 }
