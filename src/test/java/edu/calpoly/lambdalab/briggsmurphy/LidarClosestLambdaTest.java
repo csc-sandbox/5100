@@ -12,21 +12,29 @@ import org.junit.jupiter.api.Test;
 
 class LidarClosestLambdaTest {
 
+  private static class FakeStorage implements LidarClosestLambda.Storage {
+    final Map<String, String> values = new HashMap<>();
+    final Map<String, String> s3Values = new HashMap<>();
+
+    @Override
+    public void save(String id, String json) {
+      values.put(id, json);
+    }
+
+    @Override
+    public String get(String id) {
+      return values.get(id);
+    }
+
+    @Override
+    public void saveToS3(String id, String json) {
+      s3Values.put(id, json);
+    }
+  }
+
   @Test
   void findsClosestDistance() {
-    LidarClosestLambda lambda = new LidarClosestLambda(new LidarClosestLambda.Storage() {
-      private final Map<String, String> values = new HashMap<>();
-
-      @Override
-      public void save(String id, String json) {
-        values.put(id, json);
-      }
-
-      @Override
-      public String get(String id) {
-        return values.get(id);
-      }
-    });
+    LidarClosestLambda lambda = new LidarClosestLambda(new FakeStorage());
 
     Map<String, Object> event = new HashMap<>();
     event.put("body", "{\"distances\":[1.4,0.8,2.1,0.5,1.7]}");
@@ -40,19 +48,7 @@ class LidarClosestLambdaTest {
 
   @Test
   void handlesSingleValue() {
-    LidarClosestLambda lambda = new LidarClosestLambda(new LidarClosestLambda.Storage() {
-      private final Map<String, String> values = new HashMap<>();
-
-      @Override
-      public void save(String id, String json) {
-        values.put(id, json);
-      }
-
-      @Override
-      public String get(String id) {
-        return values.get(id);
-      }
-    });
+    LidarClosestLambda lambda = new LidarClosestLambda(new FakeStorage());
 
     Map<String, Object> event = new HashMap<>();
     event.put("body", "{\"distances\":[4.2]}");
@@ -66,19 +62,7 @@ class LidarClosestLambdaTest {
 
   @Test
   void rejectsEmptyArray() {
-    LidarClosestLambda lambda = new LidarClosestLambda(new LidarClosestLambda.Storage() {
-      private final Map<String, String> values = new HashMap<>();
-
-      @Override
-      public void save(String id, String json) {
-        values.put(id, json);
-      }
-
-      @Override
-      public String get(String id) {
-        return values.get(id);
-      }
-    });
+    LidarClosestLambda lambda = new LidarClosestLambda(new FakeStorage());
 
     Map<String, Object> event = new HashMap<>();
     event.put("body", "{\"distances\":[]}");
@@ -90,19 +74,7 @@ class LidarClosestLambdaTest {
 
   @Test
   void rejectsInvalidDistance() {
-    LidarClosestLambda lambda = new LidarClosestLambda(new LidarClosestLambda.Storage() {
-      private final Map<String, String> values = new HashMap<>();
-
-      @Override
-      public void save(String id, String json) {
-        values.put(id, json);
-      }
-
-      @Override
-      public String get(String id) {
-        return values.get(id);
-      }
-    });
+    LidarClosestLambda lambda = new LidarClosestLambda(new FakeStorage());
 
     Map<String, Object> event = new HashMap<>();
     event.put("body", "{\"distances\":[1.2,\"invalid\",3.4]}");
@@ -113,21 +85,7 @@ class LidarClosestLambdaTest {
   }
 
   @Test
-  void postGeneratesUuidAndSavesResult() {
-    class FakeStorage implements LidarClosestLambda.Storage {
-      final Map<String, String> values = new HashMap<>();
-
-      @Override
-      public void save(String id, String json) {
-        values.put(id, json);
-      }
-
-      @Override
-      public String get(String id) {
-        return values.get(id);
-      }
-    }
-
+  void postGeneratesUuidAndSavesResultToDynamoDbAndS3() {
     FakeStorage storage = new FakeStorage();
     LidarClosestLambda lambda = new LidarClosestLambda(storage);
 
@@ -144,7 +102,10 @@ class LidarClosestLambdaTest {
 
     String id = body.replaceAll(".*\"id\":\"([^\"]+)\".*", "$1");
     assertDoesNotThrow(() -> UUID.fromString(id));
-    assertTrue(storage.values.containsKey(id));
+
+    assertEquals(body, storage.values.get(id));
+    assertEquals(body, storage.s3Values.get(id));
+    assertTrue(storage.s3Values.containsKey(id));
   }
 
   @Test
@@ -161,6 +122,10 @@ class LidarClosestLambdaTest {
       @Override
       public String get(String key) {
         return id.equals(key) ? savedJson : null;
+      }
+
+      @Override
+      public void saveToS3(String key, String json) {
       }
     };
 
@@ -187,6 +152,10 @@ class LidarClosestLambdaTest {
       public String get(String id) {
         return null;
       }
+
+      @Override
+      public void saveToS3(String id, String json) {
+      }
     };
 
     LidarClosestLambda lambda = new LidarClosestLambda(storage);
@@ -211,6 +180,10 @@ class LidarClosestLambdaTest {
       public String get(String id) {
         return null;
       }
+
+      @Override
+      public void saveToS3(String id, String json) {
+      }
     };
 
     LidarClosestLambda lambda = new LidarClosestLambda(storage);
@@ -218,7 +191,7 @@ class LidarClosestLambdaTest {
     Map<String, Object> event = Map.of(
         "httpMethod", "GET",
         "queryStringParameters",
-            Map.of("id", "c5f1b1b7-ccf5-4b98-80f9-f1123589a123"));
+        Map.of("id", "c5f1b1b7-ccf5-4b98-80f9-f1123589a123"));
 
     Map<String, Object> response = lambda.handleRequest(event, null);
 

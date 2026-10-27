@@ -9,10 +9,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 /**
  * AWS Lambda function that finds the closest LiDAR measurement
@@ -27,16 +30,20 @@ public class LidarClosestLambda
   interface Storage {
     void save(String id, String json);
     String get(String id);
+    void saveToS3(String id, String json);
   }
 
   private static final String TABLE_NAME = "csc5100-results";
+  private static final String BUCKET_NAME = "csc5100-results";
+  private static final String S3_PREFIX = "briggsmurphy/LidarClosestLambda/";
 
   private final ObjectMapper mapper = new ObjectMapper();
   private final Storage storage;
 
   public LidarClosestLambda() {
-    DynamoDbClient client = DynamoDbClient.create();
-    this.storage = new DynamoStorage(client);
+    DynamoDbClient dynamoClient = DynamoDbClient.create();
+    S3Client s3Client = S3Client.create();
+    this.storage = new DynamoStorage(dynamoClient, s3Client);
   }
 
   LidarClosestLambda(Storage storage) {
@@ -45,9 +52,11 @@ public class LidarClosestLambda
 
   private static class DynamoStorage implements Storage {
     private final DynamoDbClient client;
+    private final S3Client s3Client;
 
-    DynamoStorage(DynamoDbClient client) {
+    DynamoStorage(DynamoDbClient client, S3Client s3Client) {
       this.client = client;
+      this.s3Client = s3Client;
     }
 
     @Override
@@ -81,6 +90,19 @@ public class LidarClosestLambda
 
       AttributeValue result = item.get("result");
       return result == null ? null : result.s();
+    }
+
+    @Override
+    public void saveToS3(String id, String json) {
+      String key = S3_PREFIX + id + ".json";
+
+      s3Client.putObject(
+          PutObjectRequest.builder()
+              .bucket(BUCKET_NAME)
+              .key(key)
+              .contentType("application/json")
+              .build(),
+          RequestBody.fromString(json));
     }
   }
 
@@ -155,7 +177,8 @@ public class LidarClosestLambda
         values[i] = Double.parseDouble(distances.get(i).toString());
 
         if (!Double.isFinite(values[i])) {
-          return httpResponse(400, "{\"error\":\"Distances must be finite numbers\"}");
+          return httpResponse(
+              400, "{\"error\":\"Distances must be finite numbers\"}");
         }
       }
 
@@ -166,6 +189,7 @@ public class LidarClosestLambda
       String json = mapper.writeValueAsString(result);
 
       storage.save(id, json);
+      storage.saveToS3(id, json);
 
       return httpResponse(200, json);
 
@@ -173,7 +197,8 @@ public class LidarClosestLambda
       return httpResponse(400, "{\"error\":\"Invalid request\"}");
     } catch (Exception e) {
       if (context != null) {
-        context.getLogger().log("LidarClosestLambda failure: " + e.getMessage());
+        context.getLogger().log(
+            "LidarClosestLambda failure: " + e.getMessage());
       }
       return httpResponse(500, "{\"error\":\"Storage operation failed\"}");
     }
