@@ -16,6 +16,8 @@ import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.sns.SnsClient;
+import software.amazon.awssdk.services.sns.model.PublishRequest;
 
 /**
  * AWS Lambda function that finds the closest LiDAR measurement
@@ -33,21 +35,62 @@ public class LidarClosestLambda
     void saveToS3(String id, String json);
   }
 
+  interface EventPublisher {
+    void publish(String json);
+  }
+
   private static final String TABLE_NAME = "csc5100-results";
   private static final String BUCKET_NAME = "csc5100-results";
   private static final String S3_PREFIX = "briggsmurphy/LidarClosestLambda/";
 
   private final ObjectMapper mapper = new ObjectMapper();
   private final Storage storage;
+  private final EventPublisher publisher;
 
   public LidarClosestLambda() {
     DynamoDbClient dynamoClient = DynamoDbClient.create();
     S3Client s3Client = S3Client.create();
+    SnsClient snsClient = SnsClient.create();
+
     this.storage = new DynamoStorage(dynamoClient, s3Client);
+    this.publisher = new SnsPublisher(
+        snsClient, System.getenv("SNS_TOPIC_ARN"));
   }
 
+  // Constructor for tests that do not need to publish to real SNS.
   LidarClosestLambda(Storage storage) {
+    this(storage, json -> {
+      // No-op publisher for existing unit tests.
+    });
+  }
+
+  // Constructor for testing successful and failed publishing.
+  LidarClosestLambda(Storage storage, EventPublisher publisher) {
     this.storage = storage;
+    this.publisher = publisher;
+  }
+
+  private static class SnsPublisher implements EventPublisher {
+    private final SnsClient client;
+    private final String topicArn;
+
+    SnsPublisher(SnsClient client, String topicArn) {
+      this.client = client;
+      this.topicArn = topicArn;
+    }
+
+    @Override
+    public void publish(String json) {
+      if (topicArn == null || topicArn.isBlank()) {
+        throw new IllegalStateException(
+            "SNS_TOPIC_ARN environment variable is not set");
+      }
+
+      client.publish(PublishRequest.builder()
+          .topicArn(topicArn)
+          .message(json)
+          .build());
+    }
   }
 
   private static class DynamoStorage implements Storage {
@@ -103,6 +146,12 @@ public class LidarClosestLambda
               .contentType("application/json")
               .build(),
           RequestBody.fromString(json));
+    }
+  }
+
+  private static class SnsPublishException extends RuntimeException {
+    SnsPublishException(Exception cause) {
+      super(cause);
     }
   }
 
@@ -191,10 +240,29 @@ public class LidarClosestLambda
       storage.save(id, json);
       storage.saveToS3(id, json);
 
+      Map<String, Object> publishedEvent = new HashMap<>();
+      publishedEvent.put("uuid", id);
+      publishedEvent.put("operation", "LidarClosestLambda");
+      publishedEvent.put("result", result);
+
+      String eventJson = mapper.writeValueAsString(publishedEvent);
+
+      try {
+        publisher.publish(eventJson);
+      } catch (Exception e) {
+        throw new SnsPublishException(e);
+      }
+
       return httpResponse(200, json);
 
     } catch (JsonProcessingException | IllegalArgumentException e) {
       return httpResponse(400, "{\"error\":\"Invalid request\"}");
+    } catch (SnsPublishException e) {
+      if (context != null) {
+        context.getLogger().log(
+            "SNS publishing failed: " + e.getCause().getMessage());
+      }
+      return httpResponse(500, "{\"error\":\"SNS publishing failed\"}");
     } catch (Exception e) {
       if (context != null) {
         context.getLogger().log(

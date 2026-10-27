@@ -197,4 +197,53 @@ class LidarClosestLambdaTest {
 
     assertEquals(404, response.get("statusCode"));
   }
+
+
+  @Test
+  void publishesJsonEventWithUuidOperationAndResult() {
+    FakeStorage storage = new FakeStorage();
+    String[] publishedEvent = new String[1];
+
+    LidarClosestLambda lambda = new LidarClosestLambda(
+        storage, json -> publishedEvent[0] = json);
+
+    Map<String, Object> event = new HashMap<>();
+    event.put("httpMethod", "POST");
+    event.put("body", "{\"distances\":[1.4,0.5,2.1]}");
+
+    Map<String, Object> response = lambda.handleRequest(event, null);
+    String body = response.get("body").toString();
+    String id = body.replaceAll(".*\"id\":\"([^\"]+)\".*", "$1");
+
+    assertEquals(200, response.get("statusCode"));
+    assertDoesNotThrow(() -> UUID.fromString(id));
+    assertTrue(publishedEvent[0].contains("\"uuid\":\"" + id + "\""));
+    assertTrue(
+        publishedEvent[0].contains("\"operation\":\"LidarClosestLambda\""));
+    assertTrue(publishedEvent[0].contains("\"result\":"));
+    assertTrue(publishedEvent[0].contains("\"distance\":0.5"));
+    assertTrue(publishedEvent[0].contains("\"index\":1"));
+  }
+
+  @Test
+  void returns500WhenSnsPublishingFails() {
+    FakeStorage storage = new FakeStorage();
+
+    LidarClosestLambda lambda = new LidarClosestLambda(
+        storage, json -> {
+          throw new RuntimeException("SNS unavailable");
+        });
+
+    Map<String, Object> event = new HashMap<>();
+    event.put("httpMethod", "POST");
+    event.put("body", "{\"distances\":[1.4,0.5,2.1]}");
+
+    Map<String, Object> response = lambda.handleRequest(event, null);
+
+    assertEquals(500, response.get("statusCode"));
+    assertEquals(
+        "{\"error\":\"SNS publishing failed\"}",
+        response.get("body"));
+  }
+
 }
