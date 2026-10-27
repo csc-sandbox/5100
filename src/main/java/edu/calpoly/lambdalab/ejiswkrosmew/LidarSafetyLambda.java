@@ -4,11 +4,6 @@ package edu.calpoly.lambdalab.ejiswkrosmew;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
-import software.amazon.awssdk.services.s3.endpoints.internal.Value;
 
 import java.util.*;
 
@@ -35,6 +30,10 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
     private final Storage storage;
     private final Messaging messaging;
 
+    /**
+     * Default constructor
+     * Try to use env variables by default
+     */
     LidarSafetyLambda() {
         this(
             System.getenv("A04_DYNAMODB_TABLE"),
@@ -44,6 +43,14 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
         );
     }
 
+    /**
+     * Create instances of Storage and Messaging from the parameters
+     *
+     * @param table    Name of the DynamoDB table to access
+     * @param bucket   Name of the S3 bucket to access
+     * @param topicArn Name of the topic that for SNS
+     * @param queueUrl Name of the queue url for SQS
+     */
     LidarSafetyLambda(String table, String bucket, String topicArn, String queueUrl) {
         this(table != null && !table.isBlank() && bucket != null && !bucket.isBlank()
                 ? new LidarSafetyStorage(table, bucket) : null,
@@ -51,10 +58,21 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
                 ? new LidarSafetyMessaging(topicArn, queueUrl) : null);
     }
 
+    /**
+     * Use provided storage
+     *
+     * @param storage Storage to use instead of defaulting to DynamoDB/S3 storage
+     */
     LidarSafetyLambda(Storage storage) {
         this(storage, null);
     }
 
+    /**
+     * Use both provided storage and messaging
+     *
+     * @param storage   Storage to use instead of defaulting to DynamoDB/S3 storage
+     * @param messaging Messaging to use instead of SNS and SQS
+     */
     LidarSafetyLambda(Storage storage, Messaging messaging) {
         this.storage = storage;
         this.messaging = messaging;

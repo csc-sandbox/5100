@@ -21,7 +21,7 @@ import java.util.Map;
  * @author James Yaguma
  * @version 1.0 (2026-10-27)
  */
-public class LidarSafetyStorage implements LidarSafetyLambda.Storage {
+final public class LidarSafetyStorage implements LidarSafetyLambda.Storage {
     private static final String OWNER = "ejiswkrosmew";
 
     private final DynamoDbClient dynamo = DynamoDbClient.builder().region(Region.US_WEST_2).build();
@@ -34,40 +34,60 @@ public class LidarSafetyStorage implements LidarSafetyLambda.Storage {
         this.bucket = bucket;
     }
 
+    /**
+     * Save a lidar-safety query result (JSON) into persistent storage
+     * UUID is used as both DynamoDB key and object key for S3 (UUID.json)
+     *
+     * @param id UUID as a string
+     * @param json The query result as string in JSON format
+     */
     @Override
     public void save(String id, String json) {
+        // Try to save to S3
         PutObjectRequest PutObjReq = PutObjectRequest.builder()
-                .bucket(bucket)
-                .key("ejiswkrosmew/lidar-safety" + id + ".json")
-                .contentType("application/json")
-                .build();
+            .bucket(bucket)
+            .key("ejiswkrosmew/lidar-safety/" + id + ".json")
+            .contentType("application/json")
+            .build();
         s3.putObject(PutObjReq, RequestBody.fromBytes(json.getBytes(StandardCharsets.UTF_8)));
 
+        // Try to save to DynamoDB
         PutItemRequest PutItemReq = PutItemRequest.builder()
-                .tableName(table)
-                .item(Map.of(
-                        "id", AttributeValue.fromS(id),
-                        "owner", AttributeValue.fromS(OWNER),
-                        "feature", AttributeValue.fromS("lidar-safety"),
-                        "resultJson", AttributeValue.fromS(json))
-                )
-                .build();
+            .tableName(table)
+            .item(Map.of(
+                "id", AttributeValue.fromS(id),
+                "owner", AttributeValue.fromS(OWNER),
+                "feature", AttributeValue.fromS("lidar-safety"),
+                "resultJson", AttributeValue.fromS(json))
+            )
+            .build();
         dynamo.putItem(PutItemReq);
     }
 
+    /**
+     * Get a previously stored query result from DynamoDB
+     *
+     * @param id UUID of the query result desired
+     * @return The query result as a String in JSON format. Returns null if failed
+     */
     @Override
     public String get(String id) {
+        // Try to get the item
         GetItemRequest getItemReq = GetItemRequest.builder()
-                .tableName(table)
-                .key(Map.of(
-                        "id", AttributeValue.fromS(id)
-                ))
-                .consistentRead(true)
-                .build();
+            .tableName(table)
+            .key(Map.of(
+                "id", AttributeValue.fromS(id)
+            ))
+            .consistentRead(true)
+            .build();
         GetItemResponse res = dynamo.getItem(getItemReq);
+
+        // If it didn't work, return null
         if (!res.hasItem()) {
             return null;
         }
+
+        // Try to get the json from the item if it exists, otherwise return null
         Map<String, AttributeValue> item = res.item();
         if (!item.containsKey("resultJson") || !item.get("owner").s().equals(OWNER)) {
             return null;
