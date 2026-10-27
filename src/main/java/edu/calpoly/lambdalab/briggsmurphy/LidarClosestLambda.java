@@ -9,6 +9,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 
 /**
  * AWS Lambda function that finds the closest LiDAR measurement
@@ -25,15 +29,59 @@ public class LidarClosestLambda
     String get(String id);
   }
 
+  private static final String TABLE_NAME = "csc5100-results";
+
   private final ObjectMapper mapper = new ObjectMapper();
   private final Storage storage;
 
   public LidarClosestLambda() {
-    this(null);
+    DynamoDbClient client = DynamoDbClient.create();
+    this.storage = new DynamoStorage(client);
   }
 
   LidarClosestLambda(Storage storage) {
     this.storage = storage;
+  }
+
+  private static class DynamoStorage implements Storage {
+    private final DynamoDbClient client;
+
+    DynamoStorage(DynamoDbClient client) {
+      this.client = client;
+    }
+
+    @Override
+    public void save(String id, String json) {
+      Map<String, AttributeValue> item = new HashMap<>();
+      item.put("id", AttributeValue.builder().s(id).build());
+      item.put("result", AttributeValue.builder().s(json).build());
+
+      client.putItem(PutItemRequest.builder()
+          .tableName(TABLE_NAME)
+          .item(item)
+          .build());
+    }
+
+    @Override
+    public String get(String id) {
+      Map<String, AttributeValue> key = Map.of(
+          "id", AttributeValue.builder().s(id).build());
+
+      Map<String, AttributeValue> item = client.getItem(
+          GetItemRequest.builder()
+              .tableName(TABLE_NAME)
+              .key(key)
+              .consistentRead(true)
+              .build())
+          .item();
+
+      if (item == null || item.isEmpty()) {
+        return null;
+      }
+
+      AttributeValue result = item.get("result");
+      return result == null ? null : result.s();
+    }
   }
 
   @Override
@@ -75,15 +123,10 @@ public class LidarClosestLambda
           return httpResponse(400, "{\"error\":\"Invalid id\"}");
         }
 
-        if (storage == null) {
-          return httpResponse(
-              503, "{\"error\":\"Storage not configured\"}");
-        }
-
         String json = storage.get(id);
 
         if (json == null) {
-          return httpResponse(404, "{\"error\":\"Not found\"}");
+          return httpResponse(404, "{\"error\":\"Result not found\"}");
         }
 
         return httpResponse(200, json);
@@ -93,13 +136,17 @@ public class LidarClosestLambda
         return httpResponse(400, "{\"error\":\"Invalid request\"}");
       }
 
-      String body = String.valueOf(event.get("body"));
-      Map<String, Object> input = mapper.readValue(body, Map.class);
+      if (!(event.get("body") instanceof String)) {
+        return httpResponse(400, "{\"error\":\"Missing request body\"}");
+      }
+
+      Map<String, Object> input =
+          mapper.readValue((String) event.get("body"), Map.class);
 
       List<?> distances = (List<?>) input.get("distances");
 
       if (distances == null || distances.isEmpty()) {
-        throw new IllegalArgumentException("Distances array is required.");
+        return httpResponse(400, "{\"error\":\"Distances array is required\"}");
       }
 
       double[] values = new double[distances.size()];
@@ -108,42 +155,27 @@ public class LidarClosestLambda
         values[i] = Double.parseDouble(distances.get(i).toString());
 
         if (!Double.isFinite(values[i])) {
-          throw new IllegalArgumentException(
-              "Distances must be finite numbers.");
+          return httpResponse(400, "{\"error\":\"Distances must be finite numbers\"}");
         }
       }
 
       Map<String, Object> result = findClosest(values);
-
-      String id = input.containsKey("id")
-          ? String.valueOf(input.get("id"))
-          : UUID.randomUUID().toString();
-
-      if (!isUuid(id)) {
-        return httpResponse(400, "{\"error\":\"Invalid id\"}");
-      }
+      String id = UUID.randomUUID().toString();
 
       result.put("id", id);
-
       String json = mapper.writeValueAsString(result);
 
-      if (storage != null) {
-        storage.save(id, json);
-      }
+      storage.save(id, json);
 
       return httpResponse(200, json);
 
     } catch (JsonProcessingException | IllegalArgumentException e) {
       return httpResponse(400, "{\"error\":\"Invalid request\"}");
-    } catch (ClassCastException e) {
-      return httpResponse(400, "{\"error\":\"Invalid request\"}");
     } catch (Exception e) {
       if (context != null) {
-        context.getLogger().log(
-            "LidarClosestLambda failure: "
-                + e.getClass().getSimpleName());
+        context.getLogger().log("LidarClosestLambda failure: " + e.getMessage());
       }
-      return httpResponse(500, "{\"error\":\"Operation failed\"}");
+      return httpResponse(500, "{\"error\":\"Storage operation failed\"}");
     }
   }
 
@@ -169,7 +201,6 @@ public class LidarClosestLambda
     Map<String, Object> result = new HashMap<>();
     result.put("distance", closestDistance);
     result.put("index", closestIndex);
-
     return result;
   }
 
@@ -178,7 +209,6 @@ public class LidarClosestLambda
     response.put("statusCode", statusCode);
     response.put("headers", Map.of("Content-Type", "application/json"));
     response.put("body", body);
-
     return response;
   }
 }

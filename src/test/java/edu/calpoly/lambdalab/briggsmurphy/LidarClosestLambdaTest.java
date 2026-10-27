@@ -14,7 +14,19 @@ class LidarClosestLambdaTest {
 
   @Test
   void findsClosestDistance() {
-    LidarClosestLambda lambda = new LidarClosestLambda();
+    LidarClosestLambda lambda = new LidarClosestLambda(new LidarClosestLambda.Storage() {
+      private final Map<String, String> values = new HashMap<>();
+
+      @Override
+      public void save(String id, String json) {
+        values.put(id, json);
+      }
+
+      @Override
+      public String get(String id) {
+        return values.get(id);
+      }
+    });
 
     Map<String, Object> event = new HashMap<>();
     event.put("body", "{\"distances\":[1.4,0.8,2.1,0.5,1.7]}");
@@ -28,7 +40,19 @@ class LidarClosestLambdaTest {
 
   @Test
   void handlesSingleValue() {
-    LidarClosestLambda lambda = new LidarClosestLambda();
+    LidarClosestLambda lambda = new LidarClosestLambda(new LidarClosestLambda.Storage() {
+      private final Map<String, String> values = new HashMap<>();
+
+      @Override
+      public void save(String id, String json) {
+        values.put(id, json);
+      }
+
+      @Override
+      public String get(String id) {
+        return values.get(id);
+      }
+    });
 
     Map<String, Object> event = new HashMap<>();
     event.put("body", "{\"distances\":[4.2]}");
@@ -42,7 +66,19 @@ class LidarClosestLambdaTest {
 
   @Test
   void rejectsEmptyArray() {
-    LidarClosestLambda lambda = new LidarClosestLambda();
+    LidarClosestLambda lambda = new LidarClosestLambda(new LidarClosestLambda.Storage() {
+      private final Map<String, String> values = new HashMap<>();
+
+      @Override
+      public void save(String id, String json) {
+        values.put(id, json);
+      }
+
+      @Override
+      public String get(String id) {
+        return values.get(id);
+      }
+    });
 
     Map<String, Object> event = new HashMap<>();
     event.put("body", "{\"distances\":[]}");
@@ -54,7 +90,19 @@ class LidarClosestLambdaTest {
 
   @Test
   void rejectsInvalidDistance() {
-    LidarClosestLambda lambda = new LidarClosestLambda();
+    LidarClosestLambda lambda = new LidarClosestLambda(new LidarClosestLambda.Storage() {
+      private final Map<String, String> values = new HashMap<>();
+
+      @Override
+      public void save(String id, String json) {
+        values.put(id, json);
+      }
+
+      @Override
+      public String get(String id) {
+        return values.get(id);
+      }
+    });
 
     Map<String, Object> event = new HashMap<>();
     event.put("body", "{\"distances\":[1.2,\"invalid\",3.4]}");
