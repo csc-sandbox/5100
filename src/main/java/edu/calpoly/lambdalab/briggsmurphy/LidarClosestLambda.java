@@ -18,6 +18,8 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.sns.SnsClient;
 import software.amazon.awssdk.services.sns.model.PublishRequest;
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 /**
  * AWS Lambda function that finds the closest LiDAR measurement
@@ -39,35 +41,57 @@ public class LidarClosestLambda
     void publish(String json);
   }
 
+  interface QueuePublisher {
+    void send(String json);
+  }
+
   private static final String TABLE_NAME = "csc5100-results";
   private static final String BUCKET_NAME = "csc5100-results";
   private static final String S3_PREFIX = "briggsmurphy/LidarClosestLambda/";
+  private static final String QUEUE_NAME = "csc5100-processing";
 
   private final ObjectMapper mapper = new ObjectMapper();
   private final Storage storage;
   private final EventPublisher publisher;
+  private final QueuePublisher queuePublisher;
 
   public LidarClosestLambda() {
     DynamoDbClient dynamoClient = DynamoDbClient.create();
     S3Client s3Client = S3Client.create();
     SnsClient snsClient = SnsClient.create();
+    SqsClient sqsClient = SqsClient.create();
 
     this.storage = new DynamoStorage(dynamoClient, s3Client);
     this.publisher = new SnsPublisher(
         snsClient, System.getenv("SNS_TOPIC_ARN"));
+    this.queuePublisher = new SqsPublisher(
+        sqsClient, System.getenv("SQS_QUEUE_URL"));
   }
 
-  // Constructor for tests that do not need to publish to real SNS.
+  // Constructor for tests that do not publish to real services.
   LidarClosestLambda(Storage storage) {
     this(storage, json -> {
-      // No-op publisher for existing unit tests.
+      // No-op SNS publisher for tests.
+    }, json -> {
+      // No-op SQS publisher for tests.
     });
   }
 
-  // Constructor for testing successful and failed publishing.
+  // Constructor that preserves the existing SNS tests.
   LidarClosestLambda(Storage storage, EventPublisher publisher) {
+    this(storage, publisher, json -> {
+      // No-op SQS publisher for tests.
+    });
+  }
+
+  // Constructor for testing both publishing branches.
+  LidarClosestLambda(
+      Storage storage,
+      EventPublisher publisher,
+      QueuePublisher queuePublisher) {
     this.storage = storage;
     this.publisher = publisher;
+    this.queuePublisher = queuePublisher;
   }
 
   private static class SnsPublisher implements EventPublisher {
@@ -89,6 +113,30 @@ public class LidarClosestLambda
       client.publish(PublishRequest.builder()
           .topicArn(topicArn)
           .message(json)
+          .build());
+    }
+  }
+
+  private static class SqsPublisher implements QueuePublisher {
+    private final SqsClient client;
+    private final String queueUrl;
+
+    SqsPublisher(SqsClient client, String queueUrl) {
+      this.client = client;
+      this.queueUrl = queueUrl;
+    }
+
+    @Override
+    public void send(String json) {
+      if (queueUrl == null || queueUrl.isBlank()) {
+        throw new IllegalStateException(
+            "SQS_QUEUE_URL environment variable is not set for "
+                + QUEUE_NAME);
+      }
+
+      client.sendMessage(SendMessageRequest.builder()
+          .queueUrl(queueUrl)
+          .messageBody(json)
           .build());
     }
   }
@@ -155,6 +203,12 @@ public class LidarClosestLambda
     }
   }
 
+  private static class SqsPublishException extends RuntimeException {
+    SqsPublishException(Exception cause) {
+      super(cause);
+    }
+  }
+
   @Override
   @SuppressWarnings("unchecked")
   public Map<String, Object> handleRequest(
@@ -217,7 +271,8 @@ public class LidarClosestLambda
       List<?> distances = (List<?>) input.get("distances");
 
       if (distances == null || distances.isEmpty()) {
-        return httpResponse(400, "{\"error\":\"Distances array is required\"}");
+        return httpResponse(
+            400, "{\"error\":\"Distances array is required\"}");
       }
 
       double[] values = new double[distances.size()];
@@ -240,6 +295,7 @@ public class LidarClosestLambda
       storage.save(id, json);
       storage.saveToS3(id, json);
 
+      // Task 4: publish independently to SNS using the existing format.
       Map<String, Object> publishedEvent = new HashMap<>();
       publishedEvent.put("uuid", id);
       publishedEvent.put("operation", "LidarClosestLambda");
@@ -253,16 +309,39 @@ public class LidarClosestLambda
         throw new SnsPublishException(e);
       }
 
+      // Task 5: publish independently to SQS using the required "id" field.
+      Map<String, Object> queueEvent = new HashMap<>();
+      queueEvent.put("id", id);
+      queueEvent.put("operation", "LidarClosestLambda");
+      queueEvent.put("result", result);
+
+      String queueJson = mapper.writeValueAsString(queueEvent);
+
+      try {
+        queuePublisher.send(queueJson);
+      } catch (Exception e) {
+        throw new SqsPublishException(e);
+      }
+
       return httpResponse(200, json);
 
     } catch (JsonProcessingException | IllegalArgumentException e) {
       return httpResponse(400, "{\"error\":\"Invalid request\"}");
+
     } catch (SnsPublishException e) {
       if (context != null) {
         context.getLogger().log(
             "SNS publishing failed: " + e.getCause().getMessage());
       }
       return httpResponse(500, "{\"error\":\"SNS publishing failed\"}");
+
+    } catch (SqsPublishException e) {
+      if (context != null) {
+        context.getLogger().log(
+            "SQS publishing failed: " + e.getCause().getMessage());
+      }
+      return httpResponse(500, "{\"error\":\"SQS publishing failed\"}");
+
     } catch (Exception e) {
       if (context != null) {
         context.getLogger().log(
