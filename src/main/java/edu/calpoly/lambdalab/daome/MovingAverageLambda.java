@@ -1,6 +1,5 @@
 package edu.calpoly.lambdalab.daome;
 
-import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -22,11 +21,11 @@ public class MovingAverageLambda implements RequestHandler<Map<String, Object>, 
 
     public MovingAverageLambda() {
         this(new MovingAverageStorageAdapter(System.getenv("A04_DYNAMODB_TABLE"), System.getenv("A04_S3_BUCKET")),
-                new MovingAverageMessageAdapter(System.getenv("A04_SNS_TOPIC_ARN"),
+                new MovingAverageMessage(System.getenv("A04_SNS_TOPIC_ARN"),
                         System.getenv("A04_SQS_QUEUE_URL")));
     }
 
-    private MovingAverageLambda(Storage storage, Message message) {
+    MovingAverageLambda(Storage storage, Message message) {
         this.storage = storage;
         this.message = message;
     }
@@ -50,10 +49,10 @@ public class MovingAverageLambda implements RequestHandler<Map<String, Object>, 
     }
 
     Map<String, Object> handleGet(Map<String, Object> event) throws RuntimeException, JsonProcessingException {
-        if (event.get("queryStringParameters") == null)
-            throw new RuntimeException();
+        if (event.get("queryStringParameters") == null) {throw new RuntimeException();}
 
-        var input = (Map<String, Object>) event.get("queryStringParameters");
+        var input = mapper.readValue(event.get("queryStringParameters").toString(),
+                new TypeReference<Map<String, Object>>() {});
         var id = (String) input.get("id");
         return mapper.readValue(storage.get(id), new TypeReference<>() {
         });
@@ -74,7 +73,7 @@ public class MovingAverageLambda implements RequestHandler<Map<String, Object>, 
         message.publishSns(json);
         message.publishSqs(json);
 
-        return new HashMap<>(Map.of("movingAverages", storageData.averages()));
+        return new HashMap<>(Map.of("id", id, "movingAverage", storageData.averages()));
     }
 
     private List<Double> movingAverage(List<Integer> numbers, Integer windowSize) {

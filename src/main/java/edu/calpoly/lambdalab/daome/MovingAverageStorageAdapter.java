@@ -25,40 +25,43 @@ public class MovingAverageStorageAdapter implements MovingAverageLambda.Storage 
     @Override
     public void save(String id, String json) {
 
-        s3Client.putObject(PutObjectRequest.builder()
-                                           .bucket(s3Bucket)
-                                           .key("Daome/MovingAverageLambda/" + id + ".json")
-                                           .contentType("application/json")
-                                           .build(), RequestBody.fromBytes(json.getBytes(StandardCharsets.UTF_8)));
-        dynamoDbClient.putItem(PutItemRequest.builder()
-                                             .tableName(dbTable)
-                                             .item(Map.of("id",
-                                                     AttributeValue.fromS(id),
-                                                     "owner",
-                                                     AttributeValue.fromS(MovingAverageLambda.OWNER),
-                                                     "operation",
-                                                     AttributeValue.fromS(MovingAverageLambda.OPERATION),
-                                                     "responseJson",
-                                                     AttributeValue.fromS(json)))
-                                             .build());
+        s3Client.putObject(PutObjectRequest
+                .builder()
+                .bucket(s3Bucket)
+                .key("Daome/MovingAverageLambda/" + id + ".json")
+                .contentType("application/json")
+                .build(), RequestBody.fromBytes(json.getBytes(StandardCharsets.UTF_8)));
+        dynamoDbClient.putItem(PutItemRequest
+                .builder()
+                .tableName(dbTable)
+                .item(Map.of("id",
+                        AttributeValue.fromS(id),
+                        "owner",
+                        AttributeValue.fromS(MovingAverageLambda.OWNER),
+                        "operation",
+                        AttributeValue.fromS(MovingAverageLambda.OPERATION),
+                        "responseJson",
+                        AttributeValue.fromS(json)))
+                .build());
     }
 
     @Override
     public String get(String id) {
-        var result = dynamoDbClient.getItem(GetItemRequest.builder()
-                                                          .tableName(dbTable)
-                                                          .key(Map.of("id", AttributeValue.fromS(id)))
-                                                          .consistentRead(true)
-                                                          .build());
+        var result = dynamoDbClient.getItem(GetItemRequest
+                .builder()
+                .tableName(dbTable)
+                .key(Map.of("id", AttributeValue.fromS(id)))
+                .consistentRead(true)
+                .build());
 
         if (!result.hasItem() || result.item().isEmpty()) {
             return null;
         }
         var item = result.item();
-        if (!item.get("operation").s().isEmpty() || !item.get("operation").s().equals(MovingAverageLambda.OPERATION))
+        if (!item.get("operation").s().isEmpty() || !item.get("operation").s().equals(MovingAverageLambda.OPERATION)) {
             return null;
-        if (!item.get("owner").s().isEmpty() || !item.get("owner").s().equals(MovingAverageLambda.OWNER))
-            return null;
+        }
+        if (!item.get("owner").s().isEmpty() || !item.get("owner").s().equals(MovingAverageLambda.OWNER)) {return null;}
 
         return item.get("responseJson").s();
     }

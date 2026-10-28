@@ -5,13 +5,13 @@ import software.amazon.awssdk.services.sns.model.PublishRequest;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
-public class MovingAverageMessageAdapter implements MovingAverageLambda.Message {
+public class MovingAverageMessage implements MovingAverageLambda.Message {
     private final SqsClient sqsClient = SqsClient.create();
     private final SnsClient snsClient = SnsClient.create();
     private final String topicArn;
     private final String sqsUrl;
 
-    public MovingAverageMessageAdapter(String topicArn, String sqsUrl) {
+    public MovingAverageMessage(String topicArn, String sqsUrl) {
         this.topicArn = topicArn;
         this.sqsUrl = sqsUrl;
     }
