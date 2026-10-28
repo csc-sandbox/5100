@@ -13,6 +13,7 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
  * @version 1.0 (2026-10-27)
  */
 public class LidarSafetyMessaging implements LidarSafetyLambda.Messaging {
+    private static final String OPERATION = "LidarSafetyLambda";
     private final SnsClient sns = SnsClient.create();
     private final SqsClient sqs = SqsClient.create();
     private final String topicArn;
@@ -30,17 +31,20 @@ public class LidarSafetyMessaging implements LidarSafetyLambda.Messaging {
      */
     @Override
     public void publish(String json) {
+        String id = json.replaceFirst(".*\\\"id\\\":\\\"([^\\\"]+)\\\".*", "$1");
+        String eventJson = "{\"id\":\"" + id + "\", \"operation\":\"" + OPERATION + "\", \"result\":" + json + "}";
+
         // SNS publish
         PublishRequest pubReq = PublishRequest.builder()
             .topicArn(topicArn)
-            .message(json)
+            .message(eventJson)
             .build();
         sns.publish(pubReq);
 
         // SQS send message
         SendMessageRequest sendMsgReq = SendMessageRequest.builder()
             .queueUrl(queueUrl)
-            .messageBody(json)
+            .messageBody(eventJson)
             .build();
         sqs.sendMessage(sendMsgReq);
     }

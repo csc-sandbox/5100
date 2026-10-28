@@ -41,7 +41,7 @@ final public class LidarSafetyStorage implements LidarSafetyLambda.Storage {
      * Save a lidar-safety query result (JSON) into persistent storage
      * UUID is used as both DynamoDB key and object key for S3 (UUID.json)
      *
-     * @param id UUID as a string
+     * @param id   UUID as a string
      * @param json The query result as string in JSON format
      */
     @Override

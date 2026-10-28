@@ -276,7 +276,7 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
     /**
      * Helper function to assist with figuring out if a request is a GET or POST
      *
-     * @param input Same input variable that was passed in {@link #handleRequest(Map, Context)}
+     * @param input       Same input variable that was passed in {@link #handleRequest(Map, Context)}
      * @param queryExists Boolean that should only be true iff query parameters were found
      * @return Either "GET" or "POST" depending on what was determined to be the method call
      */
