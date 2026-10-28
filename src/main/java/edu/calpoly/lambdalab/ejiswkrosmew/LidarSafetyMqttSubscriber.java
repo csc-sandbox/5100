@@ -45,7 +45,7 @@ public class LidarSafetyMqttSubscriber {
             @Override
             public void messageArrived(String topic, MqttMessage message) throws Exception {
                 String json = new String(message.getPayload(), StandardCharsets.UTF_8);
-                JsonNode root = toJsonTree(json);
+                JsonNode root = handleMessage(json);
                 displayCallback.accept(messageResponse(root));
                 publishAck(root);
             }
@@ -60,22 +60,43 @@ public class LidarSafetyMqttSubscriber {
         mqtt.subscribe(EVENT_PREFIX + OPERATION, 1);
     }
 
-    private JsonNode toJsonTree(String json) throws JsonProcessingException {
+    public JsonNode handleMessage(String json) throws JsonProcessingException {
         JsonNode root = mapper.readTree(json);
+
+        // Ensure root is an object
         if (root == null || !root.isObject()) {
             throw new IllegalArgumentException("A JSON object was not passed");
         }
+
+        // Ensure id is valid UUID
         String id = root.path("id").asText();
         if (!isUuid(id)) {
             throw new IllegalArgumentException("JSON object did not contain a value UUID");
         }
+
+        // Double check that operation matches
         if (!root.path("operation").asText().equals(OPERATION)) {
             throw new IllegalArgumentException("Operation received was not \"" + OPERATION + "\"");
         }
 
+        // Double check that result exists and is an object
         JsonNode result = root.path("result");
-        if (result == null || result.isNull()) {
+        if (result == null || !result.isObject()) {
             throw new IllegalArgumentException("Result was not found in passed JSON object");
+        }
+
+        // Double check that expected result fields exist
+        if (result.path("status") == null || !result.path("status").isTextual()) {
+            throw new IllegalArgumentException("\"status\" field in results was either not found or was not String");
+        }
+        if (result.path("minDist") == null || !result.path("minDist").isNumber()) {
+            throw new IllegalArgumentException("\"minDist\" field in results was either not found or was not Number");
+        }
+
+        // Make sure that status is either WARNING or SAFE
+        String status = result.path("status").asText();
+        if (!status.equals("WARNING") && !status.equals("SAFE")) {
+            throw new IllegalArgumentException("\"status\" field holds invalid value. Should be either \"WARNING\" or \"SAFE\"");
         }
 
         return root;
