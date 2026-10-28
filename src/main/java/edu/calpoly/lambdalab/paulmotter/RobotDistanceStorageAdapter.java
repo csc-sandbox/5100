@@ -13,14 +13,33 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 class RobotDistanceStorageAdapter implements RobotDistanceLambda.StorageAdapter {
 
-    S3Client s3Client = S3Client.create();
-    DynamoDbClient dynamoDbClient = DynamoDbClient.create();
-    String table;
-    String bucket;
+    private final S3Client s3Client;
+    private final DynamoDbClient dynamoDbClient;
+    private final String table;
+    private final String bucket;
 
+    /**
+     * Production constructor: creates default AWS clients.
+     * @param dbTable DynamoDB table name
+     * @param s3Bucket S3 bucket name
+     */
     RobotDistanceStorageAdapter(String dbTable, String s3Bucket){
-        table = dbTable;
-        bucket = s3Bucket;
+        this(dbTable, s3Bucket, S3Client.create(), DynamoDbClient.create());
+    }
+
+    /**
+     * Constructor that accepts its AWS clients, so tests can supply fakes.
+     * @param dbTable DynamoDB table name
+     * @param s3Bucket S3 bucket name
+     * @param s3Client S3 client to use
+     * @param dynamoDbClient DynamoDB client to use
+     */
+    RobotDistanceStorageAdapter(String dbTable, String s3Bucket,
+                                S3Client s3Client, DynamoDbClient dynamoDbClient){
+        this.table = dbTable;
+        this.bucket = s3Bucket;
+        this.s3Client = s3Client;
+        this.dynamoDbClient = dynamoDbClient;
     }
 
     @Override
@@ -37,13 +56,7 @@ class RobotDistanceStorageAdapter implements RobotDistanceLambda.StorageAdapter 
                 "id", AttributeValue.fromS(data.id),
                 "operation", AttributeValue.fromS(RobotDistanceLambda.OPERATION_NAME),
                 "owner", AttributeValue.fromS(RobotDistanceLambda.OWNER_NAME),
-                "x1", AttributeValue.fromN(Float.toString(data.x1)),
-                "y1", AttributeValue.fromN(Float.toString(data.y1)),
-                "z1", AttributeValue.fromN(Float.toString(data.z1)),
-                "x2", AttributeValue.fromN(Float.toString(data.x2)),
-                "y2", AttributeValue.fromN(Float.toString(data.y2)),
-                "z2", AttributeValue.fromN(Float.toString(data.z2)),
-                "distance", AttributeValue.fromN(Float.toString(data.distance))
+                "resultJson", AttributeValue.fromS(json)
             )).build()
         );
     }

@@ -20,7 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 final class RobotDistanceEventHandler {
     static final String EVENT_TOPIC = "csc5100/events/robot-distance";
-    static final String STATUS_TOPIC = "csc5100/status/robot-distance";
+    static final String STATUS_TOPIC = "csc5100/status/";
     private static final int MAX_LOGGED_PAYLOAD = 200;
 
     private final ObjectMapper mapper = new ObjectMapper();
@@ -65,8 +65,8 @@ final class RobotDistanceEventHandler {
 
         try {
             String ack = ackJson(event);
-            publisher.accept(STATUS_TOPIC, ack);
-            display.accept("[ack] " + STATUS_TOPIC + " " + ack);
+            publisher.accept(STATUS_TOPIC+event.id(), ack);
+            display.accept("[ack] " + STATUS_TOPIC + event.id() + " " + ack);
             return true;
         } catch (RuntimeException e) {
             display.accept("[ack failed] id=" + event.id() + ": " + e.getMessage());

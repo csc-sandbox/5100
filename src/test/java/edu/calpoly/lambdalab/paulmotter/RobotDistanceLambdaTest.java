@@ -7,6 +7,21 @@ import org.junit.jupiter.api.Test;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.PutItemResponse;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectResponse;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -169,6 +184,52 @@ class RobotDistanceLambdaTest {
             }
         }
 
+        /** In-memory DynamoDB client: stores putItem items by "id" and serves them from getItem. */
+        static class FakeDynamo implements DynamoDbClient {
+            final Map<String, Map<String, AttributeValue>> items = new HashMap<>();
+
+            @Override
+            public PutItemResponse putItem(PutItemRequest request) {
+                items.put(request.item().get("id").s(), request.item());
+                return PutItemResponse.builder().build();
+            }
+
+            @Override
+            public GetItemResponse getItem(GetItemRequest request) {
+                Map<String, AttributeValue> item = items.get(request.key().get("id").s());
+                return item == null
+                    ? GetItemResponse.builder().build()
+                    : GetItemResponse.builder().item(item).build();
+            }
+
+            @Override
+            public String serviceName() { return "dynamodb"; }
+
+            @Override
+            public void close() { }
+        }
+
+        /** In-memory S3 client: records the text written to each object key. */
+        static class FakeS3 implements S3Client {
+            final Map<String, String> objects = new HashMap<>();
+
+            @Override
+            public PutObjectResponse putObject(PutObjectRequest request, RequestBody body) {
+                try (InputStream in = body.contentStreamProvider().newStream()) {
+                    objects.put(request.key(), new String(in.readAllBytes(), StandardCharsets.UTF_8));
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                return PutObjectResponse.builder().build();
+            }
+
+            @Override
+            public String serviceName() { return "s3"; }
+
+            @Override
+            public void close() { }
+        }
+
         /** Body map with string values, as RobotDistanceLambdaData.fromParams expects. */
         static Map<String, Object> body(String x1, String y1, String z1, String x2, String y2, String z2) {
             return Map.of("x1", x1, "y1", y1, "z1", z1, "x2", x2, "y2", y2, "z2", z2);
@@ -309,6 +370,50 @@ class RobotDistanceLambdaTest {
 
             assertTrue(storage.saved.isEmpty());
             assertTrue(published.isEmpty());
+        }
+    }
+
+    /**
+     * Tests the real RobotDistanceStorageAdapter against in-memory DynamoDB and S3 clients,
+     * so the attributes it writes are the ones it reads back.
+     *
+     * @author Paul Motter (PaulMotter)
+     * @version 1.0
+     */
+    @Nested
+    class StorageAdapterTest {
+        private final ObjectMapper mapper = new ObjectMapper();
+        private RobotDistanceFakes.FakeDynamo dynamo;
+        private RobotDistanceFakes.FakeS3 s3;
+        private RobotDistanceLambda lambda;
+
+        @BeforeEach
+        void setUp() {
+            dynamo = new RobotDistanceFakes.FakeDynamo();
+            s3 = new RobotDistanceFakes.FakeS3();
+            RobotDistanceStorageAdapter adapter =
+                new RobotDistanceStorageAdapter("table", "bucket", s3, dynamo);
+            lambda = new RobotDistanceLambda(adapter, json -> { });
+        }
+
+        /**
+         * Tests that a POST result can be retrieved by its UUID, and that DynamoDB
+         * stores the exact JSON that was written to S3.
+         */
+        @Test
+        void postResultCanBeRetrievedByUuid() throws Exception {
+            Map<String, Object> posted = lambda.handleRequest(
+                RobotDistanceFakes.post(RobotDistanceFakes.body("2", "-2", "5", "4", "-5", "-1")), null);
+            assertEquals(200, posted.get("statusCode"));
+            String postBody = posted.get("body").toString();
+            String id = mapper.readTree(postBody).get("id").asText();
+
+            Map<String, Object> fetched = lambda.handleRequest(RobotDistanceFakes.getById(id), null);
+
+            assertEquals(200, fetched.get("statusCode"));
+            assertEquals(postBody, fetched.get("body"));
+            assertEquals(postBody, dynamo.items.get(id).get("resultJson").s());
+            assertEquals(postBody, s3.objects.get("PaulMotter/DistanceLambda/" + id + ".json"));
         }
     }
 

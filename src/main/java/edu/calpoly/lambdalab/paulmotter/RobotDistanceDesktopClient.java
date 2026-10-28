@@ -17,7 +17,7 @@ import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 /**
  * Console application that subscribes to csc5100/events/robot-distance,
  * displays each RobotDistanceLambda event, and publishes an ACK (QoS 1) to
- * csc5100/status/robot-distance.
+ * csc5100/status/<UUID>.
  *
  * Run: {@code java -cp target/csc5100-1.0.jar edu.calpoly.lambdalab.paulmotter.RobotDistanceDesktopClient [brokerUri]}
  * Default broker: tcp://broker.hivemq.com:1883 (public; synthetic data only).

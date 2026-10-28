@@ -103,7 +103,7 @@ public class RobotDistanceLambda implements RequestHandler<Map<String, Object>, 
         }catch (IllegalArgumentException e) {
             return httpResponse(400, "{\"error\":\"Invalid request\"}");
         } catch (Exception e) {
-        if (context != null) context.getLogger().log("TemperatureLambda failure: " + e.getClass().getSimpleName());
+        if (context != null) context.getLogger().log("RobotDistanceLambda failure: " + e.getClass().getSimpleName());
             return httpResponse(500, "{\"error\":\"Operation failed\"}");
         }
     }

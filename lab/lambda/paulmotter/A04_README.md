@@ -41,7 +41,7 @@ mvn test -Dtest=RobotDistanceLambdaTest
 
 **Functionality:** When run locally it connects to an MQTT broker (default `tcp://broker.hivemq.com:1883`), subscribes to the event topic, displays each received `RobotDistanceLambda` event, and publishes a QoS 1 acknowledgment to the status topic. Events are printed to standard out by default.\
 **Subscribe topic (events):** `csc5100/events/robot-distance`\
-**Publish topic (ACK/status):** `csc5100/status/robot-distance`
+**Publish topic (ACK/status):** `csc5100/status/<UUID>`
 
 **Run:**
 

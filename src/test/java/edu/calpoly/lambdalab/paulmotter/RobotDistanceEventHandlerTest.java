@@ -97,7 +97,7 @@ class RobotDistanceEventHandlerTest {
         assertTrue(handler.handle(VALID));
 
         assertEquals(1, published.size());
-        assertEquals("csc5100/status/robot-distance", published.get(0)[0]);
+        assertEquals("csc5100/status/" + ID, published.get(0)[0]);
 
         JsonNode ack = mapper.readTree(published.get(0)[1]);
         assertEquals(ID, ack.get("id").asText());

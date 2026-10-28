@@ -7,14 +7,32 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 public class RobotDistanceMessagingAdapter implements RobotDistanceLambda.MessagingAdapter {
 
-    private final SnsClient sns = SnsClient.create();
-    private final SqsClient sqs = SqsClient.create();
+    private final SnsClient sns;
+    private final SqsClient sqs;
     private final String topicArn;
     private final String queueUrl;
 
+    /**
+     * Production constructor: creates default AWS clients.
+     * @param SnsTopicARN SNS topic ARN
+     * @param SqsURL SQS queue URL
+     */
     RobotDistanceMessagingAdapter(String SnsTopicARN, String SqsURL){
-        topicArn = SnsTopicARN;
-        queueUrl = SqsURL;
+        this(SnsTopicARN, SqsURL, SnsClient.create(), SqsClient.create());
+    }
+
+    /**
+     * Constructor that accepts its AWS clients, so tests can supply fakes.
+     * @param SnsTopicARN SNS topic ARN
+     * @param SqsURL SQS queue URL
+     * @param sns SNS client to use
+     * @param sqs SQS client to use
+     */
+    RobotDistanceMessagingAdapter(String SnsTopicARN, String SqsURL, SnsClient sns, SqsClient sqs){
+        this.topicArn = SnsTopicARN;
+        this.queueUrl = SqsURL;
+        this.sns = sns;
+        this.sqs = sqs;
     }
 
     @Override

@@ -61,7 +61,7 @@ class RobotDistanceDesktopClientLiveTest {
             options.setCleanSession(true);
             options.setConnectionTimeout(10);
             probe.connect(options);
-            probe.subscribe(RobotDistanceEventHandler.STATUS_TOPIC, 1, (topic, message) -> {
+            probe.subscribe(RobotDistanceEventHandler.STATUS_TOPIC+id, 1, (topic, message) -> {
                 String json = new String(message.getPayload(), StandardCharsets.UTF_8);
                 try {
                     if (id.equals(mapper.readTree(json).path("id").asText())) {
