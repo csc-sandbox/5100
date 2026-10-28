@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import edu.calpoly.lambdalab.edgarddragde.RobotReachabilityLambda.InMemoryResultStore;
 import edu.calpoly.lambdalab.edgarddragde.RobotReachabilityLambda.ResultStore;
 import java.util.HashMap;
@@ -144,7 +145,7 @@ class RobotReachabilityLambdaTest {
 
     assertEquals(200, response.get("statusCode"));
     assertEquals(1, store.size());
-    assertEquals(body(response), store.get(fixed));
+    assertEquals(tree(store.get(fixed)), stored(body(response)));
   }
 
   @Test
@@ -207,7 +208,7 @@ class RobotReachabilityLambdaTest {
   // ---- GET by UUID ----
 
   @Test
-  void getByIdReturnsExactlyWhatPostReturned() {
+  void getByIdReturnsTheStoredResult() {
     RobotReachabilityLambda lambda = new RobotReachabilityLambda();
     String postBody = body(lambda.handleRequest(postEvent(GOOD_BODY), null));
     String id = idOf(postBody);
@@ -215,7 +216,8 @@ class RobotReachabilityLambdaTest {
     Map<String, Object> response = lambda.handleRequest(getEvent(Map.of("id", id)), null);
 
     assertEquals(200, response.get("statusCode"));
-    assertEquals(postBody, body(response));
+    assertEquals(stored(postBody), tree(body(response)));
+    assertFalse(body(response).contains("messaging"), "GET returns the stored record only");
   }
 
   @Test
@@ -253,6 +255,21 @@ class RobotReachabilityLambdaTest {
 
   private static String body(Map<String, Object> response) {
     return response.get("body").toString();
+  }
+
+  private static JsonNode tree(String json) {
+    try {
+      return MAPPER.readTree(json);
+    } catch (Exception e) {
+      throw new AssertionError("response was not JSON: " + json, e);
+    }
+  }
+
+  /** The POST response minus its per-request messaging status is the stored record. */
+  private static JsonNode stored(String postBody) {
+    JsonNode node = tree(postBody);
+    ((ObjectNode) node).remove("messaging");
+    return node;
   }
 
   private static String idOf(String json) {

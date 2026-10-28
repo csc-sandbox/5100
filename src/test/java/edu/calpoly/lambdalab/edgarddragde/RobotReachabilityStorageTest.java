@@ -2,7 +2,9 @@ package edu.calpoly.lambdalab.edgarddragde;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -108,6 +110,7 @@ class RobotReachabilityStorageTest {
   }
 
   // ---- save ----
+
   @Test
   void saveWritesIdenticalJsonToS3AndDynamo() {
     String id = UUID.randomUUID().toString();
@@ -151,6 +154,7 @@ class RobotReachabilityStorageTest {
   }
 
   // ---- get ----
+
   @Test
   void getReturnsExactlyWhatWasSaved() {
     String id = UUID.randomUUID().toString();
@@ -197,8 +201,9 @@ class RobotReachabilityStorageTest {
   }
 
   // ---- through the Lambda handler ----
+
   @Test
-  void postStoresTheResponseBodyInBothPlacesAndGetReturnsIt() throws Exception {
+  void postStoresTheResultInBothPlacesAndGetReturnsIt() throws Exception {
     RobotReachabilityLambda lambda = new RobotReachabilityLambda(storage);
 
     Map<String, Object> post = lambda.handleRequest(
@@ -206,16 +211,22 @@ class RobotReachabilityStorageTest {
 
     assertEquals(200, post.get("statusCode"));
     String body = post.get("body").toString();
-    String id = new ObjectMapper().readTree(body).get("id").asText();
-    assertEquals(body, s3.objects.get(RobotReachabilityStorage.s3KeyFor(id)));
-    assertEquals(body, dynamo.items.get(id).get("resultJson").s());
+    JsonNode postTree = new ObjectMapper().readTree(body);
+    String id = postTree.get("id").asText();
+    String s3Json = s3.objects.get(RobotReachabilityStorage.s3KeyFor(id));
+    String dynamoJson = dynamo.items.get(id).get("resultJson").s();
+    // Task 3: S3 and DynamoDB hold the identical JSON string for this UUID.
+    assertEquals(s3Json, dynamoJson);
+    // The POST response is that same record plus a per-request messaging status.
+    ((ObjectNode) postTree).remove("messaging");
+    assertEquals(postTree, new ObjectMapper().readTree(s3Json));
 
     Map<String, Object> get = new HashMap<>();
     get.put("httpMethod", "GET");
     get.put("queryStringParameters", Map.of("id", id));
     Map<String, Object> getResponse = lambda.handleRequest(get, null);
     assertEquals(200, getResponse.get("statusCode"));
-    assertEquals(body, getResponse.get("body"));
+    assertEquals(dynamoJson, getResponse.get("body"));
   }
 
   @Test

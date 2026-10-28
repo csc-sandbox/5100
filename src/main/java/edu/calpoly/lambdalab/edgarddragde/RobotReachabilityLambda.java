@@ -23,16 +23,17 @@ import java.util.function.Supplier;
  * {@code reachable}. Points on the boundary are reachable. This path is
  * read-only and never produces an {@code id}.
  *
- * A04 POST: the same four values in a JSON body. Each successful POST
+ * POST: the same four values in a JSON body. Each successful POST
  * generates one UUID, stores the result JSON under it, and returns that
  * same JSON including {@code id}.
  *
- * A04 GET by id: {@code GET ?id=<uuid>} returns the stored JSON.
+ * GET by id: {@code GET ?id=<uuid>} returns the stored JSON.
  *
  * @author Edgard Aviles
  * @version 1.1.0 October 27, 2026
  */
 public class RobotReachabilityLambda implements RequestHandler<Map<String, Object>, Map<String, Object>> {
+
 
   /** Persistence boundary; Task 2 supplies a DynamoDB implementation. */
   interface ResultStore {
@@ -60,18 +61,28 @@ public class RobotReachabilityLambda implements RequestHandler<Map<String, Objec
     }
   }
 
+  /** Publishes one JSON event to a messaging service; Task 4 supplies SNS, Task 5 adds SQS. */
+  interface EventSink {
+    void publish(String json);
+  }
+
+  /** Value required in the event so the instructor's consumer can route it. */
+  static final String OPERATION = "RobotReachabilityLambda";
+
   private static final String INVALID_REQUEST = "{\"error\":\"Invalid request\"}";
 
   private final ObjectMapper mapper = new ObjectMapper();
   private final ResultStore store;
   private final Supplier<String> idSupplier;
+  private final EventSink messaging;
 
   /**
    * Lambda runtime entry point; existing callers and tests use this.
-   * Uses DynamoDB when {@code A04_DYNAMODB_TABLE} is set, otherwise an in-memory store.
+   * Storage comes from {@code A04_DYNAMODB_TABLE} and {@code A04_S3_BUCKET} (in-memory if neither is set);
+   * SNS publishing is enabled by {@code A04_SNS_TOPIC_ARN}.
    */
   public RobotReachabilityLambda() {
-    this(storeFromEnvironment());
+    this(storeFromEnvironment(), () -> UUID.randomUUID().toString(), snsFromEnvironment());
   }
 
   private static ResultStore storeFromEnvironment() {
@@ -89,13 +100,24 @@ public class RobotReachabilityLambda implements RequestHandler<Map<String, Objec
     return new InMemoryResultStore();
   }
 
+  private static EventSink messagingFromEnvironment() {
+    String topicArn = System.getenv("A04_SNS_TOPIC_ARN");
+    String queueUrl = System.getenv("A04_SQS_QUEUE_URL");
+    return topicArn != null && !topicArn.isBlank() && queueUrl != null && !queueUrl.isBlank() ? new RobotReachabilityMessaging(topicArn, queueUrl) : null;
+  }
+
   RobotReachabilityLambda(ResultStore store) {
     this(store, () -> UUID.randomUUID().toString());
   }
 
   RobotReachabilityLambda(ResultStore store, Supplier<String> idSupplier) {
+    this(store, idSupplier, null);
+  }
+
+  RobotReachabilityLambda(ResultStore store, Supplier<String> idSupplier, EventSink messaging) {
     this.store = store;
     this.idSupplier = idSupplier;
+    this.messaging = messaging;
   }
 
   /**
@@ -115,7 +137,7 @@ public class RobotReachabilityLambda implements RequestHandler<Map<String, Objec
     try {
       String method = resolveMethod(event);
       if ("POST".equals(method)) {
-        return execute(event);
+        return execute(event, context);
       }
       Object query = event.get("queryStringParameters");
       if ("GET".equals(method) && query instanceof Map<?, ?> q && q.containsKey("id")) {
@@ -150,9 +172,13 @@ public class RobotReachabilityLambda implements RequestHandler<Map<String, Objec
     }
   }
 
-  /** A04 POST: compute, generate one UUID, store, and return the stored JSON. */
-  private Map<String, Object> execute(Map<String, Object> event) throws JsonProcessingException {
-    Map<String, Object> result = compute(parseBody(event));
+  /**
+   * A04 POST: compute, generate one UUID, store, then publish the event.
+   * The response is the stored record plus a per-service {@code messaging} status.
+   */
+  private Map<String, Object> execute(Map<String, Object> request, Context context)
+      throws JsonProcessingException {
+    Map<String, Object> result = compute(parseBody(request));
     // A non-finite distance (coordinate overflow) cannot be stored faithfully.
     if (!Double.isFinite(((Number) result.get("distance")).doubleValue())) {
       throw new IllegalArgumentException("distance is not finite");
@@ -163,7 +189,45 @@ public class RobotReachabilityLambda implements RequestHandler<Map<String, Objec
     record.putAll(result);
     String json = mapper.writeValueAsString(record);
     store.save(id, json);
-    return httpResponse(200, json);
+
+    // Only reached once the result is stored. One event, serialized once, same id everywhere.
+    Map<String, Object> event = new LinkedHashMap<>();
+    event.put("id", id);
+    event.put("operation", OPERATION);
+    event.put("result", result);
+    String eventJson = mapper.writeValueAsString(event);
+
+    Map<String, Object> responseBody = new LinkedHashMap<>(record);
+    if (messaging == null) {
+      responseBody.put("messaging", Map.of("sns", "not_configured", "sqs", "not_configured"));
+    } else {
+      String status = publish(messaging, "messaging", eventJson, id, context);
+      responseBody.put("messaging", messaging instanceof RobotReachabilityMessaging
+          ? ("published".equals(status)
+              ? Map.of("sns", "published", "sqs", "queued")
+              : Map.of("sns", "failed", "sqs", "failed"))
+          : Map.of("sns", status));
+    }
+    return httpResponse(200, mapper.writeValueAsString(responseBody));
+  }
+
+  /**
+   * Publishes to one sink independently of every other sink. The result is already stored, so a
+   * failure is logged with the id and reported as "failed" instead of failing the whole operation.
+   */
+  private static String publish(EventSink sink, String name, String eventJson, String id, Context context) {
+    if (sink == null) {
+      return "not_configured";
+    }
+    try {
+      sink.publish(eventJson);
+      return "published";
+    } catch (Exception e) {
+      if (context != null) {
+        context.getLogger().log("RobotReachabilityLambda " + name + " publish FAILED id=" + id + ": " + e);
+      }
+      return "failed";
+    }
   }
 
   /** A04 GET by id: return exactly the JSON that was stored. */
