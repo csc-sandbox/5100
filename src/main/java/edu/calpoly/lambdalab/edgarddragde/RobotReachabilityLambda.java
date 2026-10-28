@@ -82,7 +82,7 @@ public class RobotReachabilityLambda implements RequestHandler<Map<String, Objec
    * SNS publishing is enabled by {@code A04_SNS_TOPIC_ARN}.
    */
   public RobotReachabilityLambda() {
-    this(storeFromEnvironment(), () -> UUID.randomUUID().toString(), snsFromEnvironment());
+    this(storeFromEnvironment(), () -> UUID.randomUUID().toString(), messagingFromEnvironment());
   }
 
   private static ResultStore storeFromEnvironment() {
@@ -201,7 +201,8 @@ public class RobotReachabilityLambda implements RequestHandler<Map<String, Objec
     if (messaging == null) {
       responseBody.put("messaging", Map.of("sns", "not_configured", "sqs", "not_configured"));
     } else {
-      String status = publish(messaging, "messaging", eventJson, id, context);
+      String name = messaging instanceof RobotReachabilityMessaging ? "SNS/SQS" : "SNS";
+      String status = publish(messaging, name, eventJson, id, context);
       responseBody.put("messaging", messaging instanceof RobotReachabilityMessaging
           ? ("published".equals(status)
               ? Map.of("sns", "published", "sqs", "queued")
