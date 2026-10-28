@@ -3,10 +3,10 @@ package edu.calpoly.lambdalab.aidenrodriguez;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Test;
 
 class EncryptMessageDesktopSubscriberTest {
     private static final String ID = "14caa8ee-ca63-41f4-b57f-074007b2affc";
