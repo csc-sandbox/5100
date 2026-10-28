@@ -91,7 +91,7 @@ public class LidarSafetyMqttSubscriber {
 
         MqttMessage msg = new MqttMessage(payload.getBytes(StandardCharsets.UTF_8));
         msg.setQos(1);
-        mqtt.publish(STATUS_PREFIX + OPERATION, msg);
+        mqtt.publish(STATUS_PREFIX + id, msg);
     }
 
     /**
