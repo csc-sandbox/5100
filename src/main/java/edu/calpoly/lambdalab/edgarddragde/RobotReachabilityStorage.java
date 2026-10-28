@@ -1,41 +1,59 @@
 package edu.calpoly.lambdalab.edgarddragde;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 /**
- * DynamoDB persistence for RobotReachabilityLambda results.
+ * A04 storage adapter for RobotReachabilityLambda; the DynamoDB record is the GET source of truth.
  *
- * The table is shared by the whole class, so every item carries {@code owner} and
- * {@code feature} attributes and String only returns items that match both.
- * The result JSON is stored as one string attribute so what is read back is exactly
- * what was written.
- *
- * @author Edgard Aviles
- * @version 1.0.0 October 25, 2026
+ * <p>Both the S3 bucket and the DynamoDB table are shared by the whole class, so every S3 key
+ * lives under {@code edgarddragde/robot-reachability/} and every DynamoDB item carries
+ * {@code owner} and {@code feature} attributes that {@link #get(String)} checks.
  */
-final class DynamoResultStore implements RobotReachabilityLambda.ResultStore {
+final class RobotReachabilityStorage implements RobotReachabilityLambda.ResultStore {
   static final String OWNER = "edgarddragde";
   static final String FEATURE = "robot-reachability";
+  static final String S3_PREFIX = OWNER + "/" + FEATURE + "/";
 
   private final DynamoDbClient dynamo;
+  private final S3Client s3;
   private final String table;
+  private final String bucket;
 
-  DynamoResultStore(String table) {
-    this(DynamoDbClient.create(), table);
+  RobotReachabilityStorage(String table, String bucket) {
+    this(DynamoDbClient.create(), S3Client.create(), table, bucket);
   }
 
-  DynamoResultStore(DynamoDbClient dynamo, String table) {
+  /** Clients are injectable so unit tests can run without AWS. */
+  RobotReachabilityStorage(DynamoDbClient dynamo, S3Client s3, String table, String bucket) {
     this.dynamo = dynamo;
+    this.s3 = s3;
     this.table = table;
+    this.bucket = bucket;
+  }
+
+  static String s3KeyFor(String id) {
+    return S3_PREFIX + id + ".json";
   }
 
   @Override
   public void save(String id, String json) {
+    // Store the object first; a failed DynamoDB write can leave an orphan S3 object,
+    // but never a DynamoDB record whose S3 object is missing. This is not a transaction.
+    s3.putObject(PutObjectRequest.builder()
+            .bucket(bucket)
+            .key(s3KeyFor(id))
+            .contentType("application/json")
+            .build(),
+        RequestBody.fromBytes(json.getBytes(StandardCharsets.UTF_8)));
     dynamo.putItem(PutItemRequest.builder()
         .tableName(table)
         .item(Map.of(

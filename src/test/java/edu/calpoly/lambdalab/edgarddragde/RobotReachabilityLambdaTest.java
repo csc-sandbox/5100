@@ -19,7 +19,8 @@ class RobotReachabilityLambdaTest {
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final String GOOD_BODY = "{\"x\":3,\"y\":4,\"z\":5,\"radius\":10}";
 
-  /* ---- Original tests (unchanged): they send no httpMethod, so they exercise the legacy GET path ---- */
+  // ---- Original tests (unchanged): they send no httpMethod, so they exercise the legacy GET path ----
+
   @Test
   void insideRadius() {
     RobotReachabilityLambda lambda = new RobotReachabilityLambda();
@@ -58,7 +59,8 @@ class RobotReachabilityLambdaTest {
     assertEquals(400, response.get("statusCode"));
   }
 
-  /* ---- Legacy GET contract ---- */
+  // ---- Legacy GET contract ----
+
   @Test
   void legacyGetReturnsOnlyDistanceAndReachable() throws Exception {
     Map<String, Object> query = new HashMap<>();
@@ -94,7 +96,8 @@ class RobotReachabilityLambdaTest {
     assertEquals(400, new RobotReachabilityLambda().handleRequest(null, null).get("statusCode"));
   }
 
-  /* ---- POST ----*/
+  // ---- POST ----
+
   @Test
   void postReturnsUuidAndOriginalFields() throws Exception {
     Map<String, Object> response = new RobotReachabilityLambda().handleRequest(postEvent(GOOD_BODY), null);
@@ -201,7 +204,8 @@ class RobotReachabilityLambdaTest {
     assertFalse(body(response).contains("boom-secret"));
   }
 
-  /* ---- GET by UUID ----*/
+  // ---- GET by UUID ----
+
   @Test
   void getByIdReturnsExactlyWhatPostReturned() {
     RobotReachabilityLambda lambda = new RobotReachabilityLambda();
@@ -231,7 +235,8 @@ class RobotReachabilityLambdaTest {
     }
   }
 
-  /* ---- helpers ---- */
+  // ---- helpers ----
+
   private static Map<String, Object> getEvent(Map<String, Object> query) {
     Map<String, Object> event = new HashMap<>();
     event.put("httpMethod", "GET");

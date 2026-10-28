@@ -18,19 +18,19 @@ import java.util.function.Supplier;
  * AWS Lambda handler that determines whether a 3D point is within
  * a robot workspace centered at the origin.
  *
- * GET: query parameters {@code x}, {@code y}, {@code z}, and
+ * Legacy GET: query parameters {@code x}, {@code y}, {@code z}, and
  * {@code radius} return JSON containing {@code distance} and
  * {@code reachable}. Points on the boundary are reachable. This path is
  * read-only and never produces an {@code id}.
  *
- * POST: the same four values in a JSON body. Each successful POST
+ * A04 POST: the same four values in a JSON body. Each successful POST
  * generates one UUID, stores the result JSON under it, and returns that
  * same JSON including {@code id}.
  *
- * GET by id: {@code GET ?id=<uuid>} returns the stored JSON.
+ * A04 GET by id: {@code GET ?id=<uuid>} returns the stored JSON.
  *
  * @author Edgard Aviles
- * @version 1.1.0 October 25, 2026
+ * @version 1.1.0 October 27, 2026
  */
 public class RobotReachabilityLambda implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
@@ -68,7 +68,7 @@ public class RobotReachabilityLambda implements RequestHandler<Map<String, Objec
 
   /**
    * Lambda runtime entry point; existing callers and tests use this.
-   * Uses DynamoDB when A04_DYNAMODB_TABLE is set, otherwise an in-memory store.
+   * Uses DynamoDB when {@code A04_DYNAMODB_TABLE} is set, otherwise an in-memory store.
    */
   public RobotReachabilityLambda() {
     this(storeFromEnvironment());
@@ -76,7 +76,17 @@ public class RobotReachabilityLambda implements RequestHandler<Map<String, Objec
 
   private static ResultStore storeFromEnvironment() {
     String table = System.getenv("A04_DYNAMODB_TABLE");
-    return table != null && !table.isBlank() ? new DynamoResultStore(table) : new InMemoryResultStore();
+    String bucket = System.getenv("A04_S3_BUCKET");
+    boolean hasTable = table != null && !table.isBlank();
+    boolean hasBucket = bucket != null && !bucket.isBlank();
+    if (hasTable && hasBucket) {
+      return new RobotReachabilityStorage(table, bucket);
+    }
+    if (hasTable || hasBucket) {
+      // Half-configured would silently skip one store; fail loudly instead.
+      throw new IllegalStateException("Set both A04_DYNAMODB_TABLE and A04_S3_BUCKET, or neither");
+    }
+    return new InMemoryResultStore();
   }
 
   RobotReachabilityLambda(ResultStore store) {
