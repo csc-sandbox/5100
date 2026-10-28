@@ -1,9 +1,10 @@
 package edu.calpoly.lambdalab.ejiswkrosmew;
 
-import edu.calpoly.lambdalab.instructor.TemperatureLambda;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -172,5 +173,43 @@ public class LidarSafetyLambdaTest {
             "queryStringParameters", Map.of("id", "46bf9dfc-2e21-402a-b099-28d6ed098dc6")
         );
         assertEquals(404, lambda.handleRequest(invalidUuid, null).get("statusCode"));
+    }
+
+    @Test
+    void postSendsPayloadToMessagingChannels() {
+        List<String> messages = new ArrayList<>();
+        LidarSafetyLambda lambda = new LidarSafetyLambda(new LidarSafetyLambda.Storage() {
+            public void save(String id, String json ) { }
+            public String get(String id) { return null; }
+        }, messages::add);
+
+        String id = "e465fd07-1bc9-4bc2-ae07-7b0402921cd2";
+        Map<String, Object> req = Map.of(
+            "httpMethod", "POST",
+            "body", "{\"id\":\"" + id + "\", \"distances\": [1.7, 2.5, 0.2, 0.7], \"threshold\": 0.9}"
+        );
+        Map<String, Object> res = lambda.handleRequest(req, null);
+
+        assertEquals(200, res.get("statusCode"));
+        assertEquals(1, messages.size());
+        assertTrue(messages.get(0).contains(id));
+        assertTrue(res.get("body").toString().contains("\"sns\":\"published\""));
+        assertTrue(res.get("body").toString().contains("\"sqs\":\"queued\""));
+    }
+
+    @Test
+    void legacyGetNoPublish() {
+        List<String> messages = new ArrayList<>();
+        LidarSafetyLambda lambda = new LidarSafetyLambda(null, messages::add);
+        Map<String, Object> req = Map.of(
+            "httpMethod", "GET",
+            "queryStringParameters", Map.of(
+                "distances", "[1.5, 1.0, 2.2, 1.3]",
+                "threshold", "0.9"
+            )
+        );
+        Map<String, Object> res = lambda.handleRequest(req, null);
+        assertEquals(200, res.get("statusCode"));
+        assertTrue(messages.isEmpty());
     }
 }

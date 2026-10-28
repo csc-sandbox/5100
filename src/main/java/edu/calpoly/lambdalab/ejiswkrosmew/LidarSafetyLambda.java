@@ -113,7 +113,12 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
                 if (storage == null) { // Storage doesn't exist
                     return errorResponse(500, "Storage not configured");
                 }
-                String json = storage.get(id);
+                String json;
+                try {
+                    json = storage.get(id);
+                } catch (Exception e) {
+                    return errorResponse(500, "Unable to persist result into storage");
+                }
                 if (json == null) { // Not found
                     return errorResponse(404, "Not found");
                 }
@@ -122,10 +127,28 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
                 return httpResponse(200, json);
             }
 
-            // Use either the query or the JSON body for input
-            Map<String, Object> body = query;
-            if (method.equals("POST") && (input.get("httpMethod") != null || query.isEmpty())) {
+            // Check for legacy get
+            boolean legacyGet = method.equals("GET") || (input.get("httpMethod") == null && !query.isEmpty());
+
+            // Use either query or post body depending on legacy get
+            Map<String, Object> body;
+            if (!legacyGet) {
                 body = mapper.readValue(input.get("body").toString(), Map.class);
+            } else {
+                body = new HashMap<>(query);
+
+                // Need to manually parse threshold since it's a string
+                body.put("threshold", Double.parseDouble(body.get("threshold").toString()));
+
+                // Have to manually parse the distances since it's a string not a list
+                String distString = body.get("distances").toString();
+                distString = distString.substring(1, distString.length() - 1);
+                List<Double> parsedDists = new ArrayList<>();
+                for (String dist : distString.split(",")) {
+                    parsedDists.add(Double.parseDouble(dist));
+                }
+
+                body.put("distances", parsedDists);
             }
 
             // Convert body to distances and thresholds
@@ -135,38 +158,55 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
             // Get the response result as a Map
             Map<String, Object> response = new HashMap<>(safetyCheck(distances, threshold));
 
-            // Create a UUID for the successful query and add it to the response
-            String id = UUID.randomUUID().toString();
+            // If legacy get, we're not persisting results so end here
+            if (legacyGet) {
+                return httpResponse(200, mapper.writeValueAsString(response));
+            }
+
+            // Create/Reuse a UUID for the successful query and add it to the response
+            String id = body.getOrDefault("id", UUID.randomUUID()).toString();
             response.put("id", id);
 
             // Update storage if possible
             if (storage != null) {
-                storage.save(id, mapper.writeValueAsString(response));
-                response.put("storage", Map.of(
-                    "dynamodb", "stored",
-                    "s3", "stored"
-                ));
+                try {
+                    storage.save(id, mapper.writeValueAsString(response));
+                    response.put("storage", Map.of(
+                        "dynamodb", "stored",
+                        "s3", "stored"
+                    ));
+                } catch (Exception e) {
+                    response.put("storage", Map.of(
+                        "dynamodb", "failed",
+                        "s3", "failed"
+                    ));
+                }
             } else {
                 response.put("storage", Map.of(
                     "dynamodb", "not_configured",
                     "s3", "not_configured"
                 ));
-
             }
 
             // Send messages if possible
             if (messaging != null) {
-                messaging.publish(mapper.writeValueAsString(response));
-                response.put("messaging", Map.of(
-                    "sns", "published",
-                    "sqs", "queued"
-                ));
+                try {
+                    messaging.publish(mapper.writeValueAsString(response));
+                    response.put("messaging", Map.of(
+                        "sns", "published",
+                        "sqs", "queued"
+                    ));
+                } catch (Exception e) {
+                    response.put("messaging", Map.of(
+                        "sns", "failed",
+                        "sqs", "failed"
+                    ));
+                }
             } else {
                 response.put("messaging", Map.of(
                     "sns", "not_configured",
                     "sqs", "not_configured"
                 ));
-
             }
 
             // Return the response as a JSON string
@@ -273,7 +313,7 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
      * Almost directly copied from edu.calpoly.lambdalab.instructor.TemperatureLambda
      *
      * @param id The UUID to test
-     * @return True if the UUID is a valid UUID. Otherwise returns false
+     * @return True if the UUID is a valid UUID. Otherwise, returns false
      */
     private boolean isUuid(String id) {
         try {
