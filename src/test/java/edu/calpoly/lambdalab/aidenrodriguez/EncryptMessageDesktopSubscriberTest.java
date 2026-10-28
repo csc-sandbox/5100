@@ -35,6 +35,8 @@ class EncryptMessageDesktopSubscriberTest {
                 "{\"id\":\"" + ID + "\",\"operation\":\"EncryptMessageLambda\",\"result\":1}");
         JsonNode acknowledgement = MAPPER.readTree(EncryptMessageDesktopSubscriber.acknowledgementFor(event));
 
+        assertEquals("csc5100/status/" + ID,
+            EncryptMessageDesktopSubscriber.statusTopicFor(event));
         assertEquals(ID, acknowledgement.path("id").asText());
         assertEquals("EncryptMessageLambda", acknowledgement.path("operation").asText());
         assertEquals("received", acknowledgement.path("status").asText());

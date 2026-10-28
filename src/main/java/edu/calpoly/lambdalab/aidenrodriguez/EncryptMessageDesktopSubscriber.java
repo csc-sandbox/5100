@@ -21,7 +21,7 @@ import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 public final class EncryptMessageDesktopSubscriber implements AutoCloseable {
     public static final String DEFAULT_BROKER = "tcp://broker.hivemq.com:1883";
     public static final String EVENT_TOPIC = "csc5100/events/encrypt";
-    public static final String STATUS_TOPIC = "csc5100/status/encrypt";
+    public static final String STATUS_TOPIC_PREFIX = "csc5100/status/";
     public static final String OPERATION = "EncryptMessageLambda";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -88,12 +88,17 @@ public final class EncryptMessageDesktopSubscriber implements AutoCloseable {
                 "status", "received"));
     }
 
+    static String statusTopicFor(EncryptEvent event) {
+        return STATUS_TOPIC_PREFIX + event.id();
+    }
+
     private void publishAcknowledgement(EncryptEvent event) throws Exception {
         MqttMessage acknowledgement = new MqttMessage(
                 acknowledgementFor(event).getBytes(StandardCharsets.UTF_8));
         acknowledgement.setQos(1);
-        client.getTopic(STATUS_TOPIC).publish(acknowledgement).waitForCompletion();
-        System.out.println("Acknowledged id=" + event.id() + " on " + STATUS_TOPIC + " (QoS 1)");
+        String topic = statusTopicFor(event);
+        client.getTopic(topic).publish(acknowledgement).waitForCompletion();
+        System.out.println("Acknowledged id=" + event.id() + " on " + topic + " (QoS 1)");
     }
 
     @Override

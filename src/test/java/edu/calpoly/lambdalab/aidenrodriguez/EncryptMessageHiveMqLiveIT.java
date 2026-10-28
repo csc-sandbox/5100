@@ -2,6 +2,8 @@ package edu.calpoly.lambdalab.aidenrodriguez;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.UUID;
@@ -21,10 +23,12 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 @EnabledIfEnvironmentVariable(named = "RUN_HIVEMQ_LIVE_TESTS", matches = "true")
 class EncryptMessageHiveMqLiveIT {
     private static final Duration TIMEOUT = Duration.ofSeconds(15);
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Test
     void receivesSyntheticEventAndAcknowledgesMatchingUuid() throws Exception {
         String id = UUID.randomUUID().toString();
+        String expectedTopic = EncryptMessageDesktopSubscriber.STATUS_TOPIC_PREFIX + id;
         CountDownLatch acknowledgementReceived = new CountDownLatch(1);
         MqttClient acknowledgementListener = client("status-listener");
         EncryptMessageDesktopSubscriber desktopSubscriber = new EncryptMessageDesktopSubscriber(
@@ -33,12 +37,17 @@ class EncryptMessageHiveMqLiveIT {
         MqttClient publisher = client("publisher");
         try {
             connect(acknowledgementListener);
-            acknowledgementListener.subscribe(EncryptMessageDesktopSubscriber.STATUS_TOPIC, 1,
+            acknowledgementListener.subscribe(expectedTopic, 1,
                     (topic, message) -> {
-                        String body = new String(message.getPayload(), StandardCharsets.UTF_8);
-                        if (body.contains("\"id\":\"" + id + "\"")
-                                && body.contains("\"status\":\"received\"")) {
-                            acknowledgementReceived.countDown();
+                        try {
+                            JsonNode body = MAPPER.readTree(
+                                    new String(message.getPayload(), StandardCharsets.UTF_8));
+                            if (expectedTopic.equals(topic) && id.equals(body.path("id").asText())
+                                    && "received".equals(body.path("status").asText())) {
+                                acknowledgementReceived.countDown();
+                            }
+                        } catch (Exception ignored) {
+                            // Ignore malformed messages on the public test broker.
                         }
                     });
 

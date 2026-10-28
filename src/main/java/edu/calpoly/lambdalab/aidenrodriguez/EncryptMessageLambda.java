@@ -81,12 +81,16 @@ public class EncryptMessageLambda implements RequestHandler<Map<String, Object>,
             String message = requireText(input.get("message"), "message");
             int shift = Integer.parseInt(requireText(input.get("shift"), "shift"));
             String encrypted = caesarShift(message, shift);
-            String id = UUID.randomUUID().toString();
 
             Map<String, Object> output = new LinkedHashMap<>();
             output.put("original", message);
             output.put("encrypted", encrypted);
             output.put("shift", shift);
+            if (legacyGet) {
+                return httpResponse(200, mapper.writeValueAsString(output));
+            }
+
+            String id = UUID.randomUUID().toString();
             output.put("id", id);
             output.put("messaging", Map.of(
                     "sns", snsMessaging == null ? "not_configured" : "published",

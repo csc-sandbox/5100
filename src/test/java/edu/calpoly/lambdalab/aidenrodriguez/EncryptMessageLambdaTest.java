@@ -1,7 +1,7 @@
 package edu.calpoly.lambdalab.aidenrodriguez;
 
-import java.util.HashMap;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -21,11 +21,8 @@ class EncryptMessageLambdaTest {
   @Test
   void encryptsHelloWithShiftThree() {
     EncryptMessageLambda lambda = new EncryptMessageLambda();
-    Map<String, Object> queryParameters = new HashMap<>();
-    queryParameters.put("message", "Hello");
-    queryParameters.put("shift", "3");
-    Map<String, Object> event = new HashMap<>();
-    event.put("queryStringParameters", queryParameters);
+    Map<String, Object> event = Map.of("httpMethod", "POST",
+      "body", "{\"message\":\"Hello\",\"shift\":\"3\"}");
     Map<String, Object> response = lambda.handleRequest(event, null);
     assertEquals(200, response.get("statusCode"));
     assertTrue(response.get("body").toString().contains("\"original\":\"Hello\""));
@@ -68,6 +65,26 @@ class EncryptMessageLambdaTest {
     event.put("queryStringParameters", queryParameters);
     Map<String, Object> response = lambda.handleRequest(event, null);
     assertEquals(400, response.get("statusCode"));
+  }
+
+  @Test
+  void legacyGetReturnsEncryptionWithoutStorageOrMessagingSideEffects() {
+    List<String> published = new ArrayList<>();
+    int[] storageCalls = {0};
+    EncryptMessageLambda.Storage storage = new EncryptMessageLambda.Storage() {
+      public void save(String id, String json) { storageCalls[0]++; }
+      public String get(String id) { storageCalls[0]++; return null; }
+    };
+    EncryptMessageLambda lambda = new EncryptMessageLambda(storage, published::add, published::add);
+
+    Map<String, Object> response = lambda.handleRequest(Map.of("httpMethod", "GET",
+        "queryStringParameters", Map.of("message", "Hello", "shift", "3")), null);
+
+    assertEquals(200, response.get("statusCode"));
+    assertEquals("{\"original\":\"Hello\",\"encrypted\":\"Khoor\",\"shift\":3}",
+        response.get("body"));
+    assertEquals(0, storageCalls[0]);
+    assertTrue(published.isEmpty());
   }
 
   @Test
