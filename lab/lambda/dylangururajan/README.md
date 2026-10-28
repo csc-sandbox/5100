@@ -54,3 +54,8 @@ In the PR description include:
 - Confirmation that `mvn clean package` succeeds
 - The `api.javiergs.phd` endpoint tested
 - The result of the deployed test
+
+## A04 extension
+
+The distributed-system extension, MQTT console instructions, and integration-evidence checklist are
+documented in [Coordinate Normalizer A04](../../../docs/a04/dylangururajan-coordinate-normalizer.md).
