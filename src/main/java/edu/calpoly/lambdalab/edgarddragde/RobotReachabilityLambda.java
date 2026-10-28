@@ -71,7 +71,12 @@ public class RobotReachabilityLambda implements RequestHandler<Map<String, Objec
    * Uses DynamoDB when A04_DYNAMODB_TABLE is set, otherwise an in-memory store.
    */
   public RobotReachabilityLambda() {
-    this(new InMemoryResultStore());
+    this(storeFromEnvironment());
+  }
+
+  private static ResultStore storeFromEnvironment() {
+    String table = System.getenv("A04_DYNAMODB_TABLE");
+    return table != null && !table.isBlank() ? new DynamoResultStore(table) : new InMemoryResultStore();
   }
 
   RobotReachabilityLambda(ResultStore store) {
