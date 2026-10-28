@@ -47,7 +47,7 @@ public class LidarSafetyMqttLiveIntegrationTest {
                 }
             });
             ackSubscriber.connect(options);
-            ackSubscriber.subscribe(LidarSafetyMqttSubscriber.STATUS_PREFIX + LidarSafetyMqttSubscriber.OPERATION);
+            ackSubscriber.subscribe(LidarSafetyMqttSubscriber.STATUS_PREFIX + id, 1);
 
             eventPublisher = new MqttClient(LidarSafetyMqttSubscriber.DEFAULT_BROKER, "csc5100-lidar-safety-live-integration-test-" + UUID.randomUUID());
             String event = "{\"id\":\"" + id + "\", \"operation\":\"" + LidarSafetyMqttSubscriber.OPERATION + "\", \"result\":{\"status\":\"WARNING\", \"minDist\":0.2}}";
@@ -56,7 +56,7 @@ public class LidarSafetyMqttLiveIntegrationTest {
             eventPublisher.connect(options);
             eventPublisher.publish(LidarSafetyMqttSubscriber.EVENT_PREFIX + LidarSafetyMqttSubscriber.OPERATION, msg);
 
-            assertTrue(ackReceived.await(10, TimeUnit.SECONDS));
+            assertTrue(ackReceived.await(10, TimeUnit.SECONDS), "Timed out waiting for ACK on topic " + LidarSafetyMqttSubscriber.STATUS_PREFIX + id);
         } finally {
             if (ackSubscriber != null) {
                 if (ackSubscriber.isConnected()) {
