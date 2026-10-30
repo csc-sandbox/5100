@@ -3,6 +3,7 @@
 **Package:** `edu.calpoly.lambdalab.jjuangon03`  
 **Class:** `GazeClusterLambda`  
 **HTTP method:** `POST`  
+**Lookup method:** `GET`  
 **Route:** `/5100/gaze-clusters`  
 **Public endpoint:** `https://api.javiergs.phd/5100/gaze-clusters`
 
@@ -35,6 +36,15 @@ Response:
 
 ```json
 {
+  "id": "generated-uuid",
+  "operation": "GazeClusterLambda",
+  "result": {
+    "numberOfClusters": 2,
+    "clusters": [
+      {"id": 0, "centerX": 0.11, "centerY": 0.20, "points": 3},
+      {"id": 1, "centerX": 0.76, "centerY": 0.70, "points": 3}
+    ]
+  },
   "numberOfClusters": 2,
   "clusters": [
     {"id": 0, "centerX": 0.11, "centerY": 0.20, "points": 3},
@@ -44,6 +54,38 @@ Response:
 ```
 
 Return HTTP `200` for a valid request and HTTP `400` for invalid input.
+The original `numberOfClusters` and `clusters` fields are preserved. Each successful
+POST now also returns a correlation `id` and `operation` for A04 integrations.
+
+Retrieve a result with `GET /5100/gaze-clusters?id=<uuid>`. The Lambda also accepts
+the UUID as a path parameter when API Gateway is configured with a matching route.
+GET returns the stored result JSON, `404` for an unknown UUID, and `400` for an
+invalid UUID.
+
+## A04 Cloud and Desktop Integration
+
+Configure these Lambda environment variables in the deployment environment; do not
+commit AWS credentials or secrets:
+
+- `A04_DYNAMODB_TABLE` — `csc5100-results`
+- `A04_S3_BUCKET` — `csc5100-results`
+- `A04_SNS_TOPIC_ARN` — SNS topic ARN for `csc5100-events`
+- `A04_SQS_QUEUE_URL` — queue URL for `csc5100-processing`
+
+The same JSON result (including its UUID) is persisted to DynamoDB and S3. SNS and
+SQS publishing are independent; configure each destination separately. The SQS
+event includes `operation: "GazeClusterLambda"` for function-specific MQTT routing.
+S3 objects use the `jjuangon03/gaze-clusters/<uuid>.json` key.
+
+Run the console subscriber with Maven's compiled classpath or from the IDE:
+
+`edu.calpoly.lambdalab.jjuangon03.GazeClusterMqttSubscriber`
+
+It listens at QoS 1 on `csc5100/events/gaze-clusters` at
+`broker.hivemq.com:1883`, displays validated JSON events, and publishes a QoS 1
+receipt to `csc5100/status/<uuid>`. Use synthetic data only on the public broker.
+The live HiveMQ JUnit test is tagged `integration` and is opt-in:
+`mvn -Dhivemq.integration=true -Dgroups=integration test`.
 
 ## Provided DBSCAN Algorithm
 
@@ -148,17 +190,19 @@ Your response must be JSON and follow the contract above.
 
 ## Pull Request
 
-Create **one PR** for this lab. Do not create an Issue, Story, or Task.
+Create **one PR** for A04 after creating and closing the seven required native
+sub-issues under the A04 Story.
 
 PR title:
 
-`Lambda Lab - GazeClusterLambda - <GitHubID>`
+`A04 - GazeClusterLambda`
 
-In the PR description include:
+Include `A04 Story: #<issue>` in the PR body. Include:
 
 - Lambda: `GazeClusterLambda`
-- Method and route: `POST /5100/gaze-clusters`
-- Confirmation that JUnit tests pass
-- Confirmation that `mvn clean package` succeeds
-- The `api.javiergs.phd` endpoint tested
-- The result of the deployed test
+- The original POST contract and GET-by-UUID curl requests and responses
+- JUnit and `mvn clean package` results
+- DynamoDB and S3 persistence evidence using the same UUID and JSON
+- Independent SNS and SQS publishing evidence, including both broker outputs
+- Desktop MQTT receipt and UUID-specific ACK evidence
+- The seven native sub-issues closed before review
