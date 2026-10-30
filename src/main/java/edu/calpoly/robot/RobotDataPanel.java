@@ -18,7 +18,7 @@ import javax.swing.JPanel;
  * This class is typically created, added to a frame, and then updated continuously.
  * 
  * @author Paul Motter (PaulMotter)
- * @version 1.0.0 (9/24/2026)
+ * @version 1.0.1 (9/26/2026)
  */
 public class RobotDataPanel extends JPanel {
     private final JLabel[] jointLabels;
@@ -65,6 +65,12 @@ public class RobotDataPanel extends JPanel {
         lastUpdatedLabel.setFont(mono);
         lastUpdatedLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         add(lastUpdatedLabel);
+
+        for (JLabel jL : jointLabels){
+            jL.setText("-");
+        }
+        posLabel.setText("<html>x=-<br>y=-<br>z=-</html>");
+        lastUpdatedLabel.setText("--:--:--");
     }
 
     // helper function.
@@ -90,5 +96,4 @@ public class RobotDataPanel extends JPanel {
             data.position[0], data.position[1], data.position[2]));
         lastUpdatedLabel.setText(new SimpleDateFormat("hh:mm:ss").format(lastUpdated));
     }
-    
 }

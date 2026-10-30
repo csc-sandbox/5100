@@ -125,7 +125,6 @@ class RobotDisplayPanel extends JPanel {
                     (int)(2*halfBarWidth), (int)(2*halfBarWidth)
                 );
             }
-
         }
         finally {
             g.dispose();

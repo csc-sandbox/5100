@@ -45,3 +45,27 @@ I believe `RobotMessage.java` and `RobotBlackBoard.java` can be used by other pa
 - **Inputs**: are `RobotMessage` objects.
 - **Ouputs**: are calls to callback functions that are passed the current `RobotMessage` and the ability to retrieve a current state.
 - **Dependencies**: `RobotMessage` as the data that is posted, retrieved, and passed to a callback.
+
+**`RobotRESTAdapter`**
+
+- **inputs**: GET and PUT request to /robot/\<robotID>
+- **Outputs**: Updates a `RobotBlackBoard`
+- **Dependencies**: `RobotBlackBoard` and `HttpServer`.
+
+**`RobotMQTTAdapter`**
+
+- **inputs**: Published packages to csc5100/robot/\<robotID>
+- **Outputs**: Updates a `RobotBlackBoard`
+- **Dependencies** `RobotBlackBoard` and `MqttClient`
+
+**`RobotRESTProvider`**
+
+- **inputs**: Strings and RobotMessages to be sent.
+- **Outputs**: Sent requests to the /robot/\<robotID> resource.
+- **Dependencies** `HttpClient`
+
+**`RobotRESTProvider`**
+
+- **inputs**: Strings and RobotMessages to be sent.
+- **Outputs**: Publishing packages on the csc510/robot/\<robotID> topic.
+- **Dependencies** `MqttClient`

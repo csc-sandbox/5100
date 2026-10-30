@@ -1,15 +1,37 @@
 package edu.calpoly.robot;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
  * RobotMessage is a data class for parsing ROBOT messages and creating copies of the message.
  * 
  * @author Paul Motter (PaulMotter)
- * @version 1.0.0 (9/24/2026)
+ * @version 1.0.1 (9/26/2026)
  */
 public class RobotMessage {
     public static final int NUMBER_OF_JOINTS = 6;
     public float[] jointAngles = new float[NUMBER_OF_JOINTS];
     public float[] position = new float[3];
+
+    /**
+     * Creates a RobotMessage from an array of jointAngles and positions.
+     * @param jointAngles
+     * @param position
+     */
+    public RobotMessage(
+            @JsonProperty("jointAngles") float[] jointAngles,
+            @JsonProperty("position")    float[] position) {
+    
+        if (jointAngles == null || jointAngles.length != NUMBER_OF_JOINTS) {
+            throw new IllegalArgumentException(
+                "jointAngles must contain exactly " + NUMBER_OF_JOINTS + " values");
+        }
+        if (position == null || position.length != 3) {
+            throw new IllegalArgumentException("position must contain exactly 3 elements");
+        }
+        this.jointAngles = jointAngles.clone();
+        this.position = position.clone();
+    }
 
     /**
      * Creates a deep copy of the provided RobotMessage.
@@ -66,6 +88,5 @@ public class RobotMessage {
         sb.append("\n\tPosition:");
         sb.append(" x=" + position[0] + ", y=" + position[1] + ", z=" + position[2] + "\n");
         return sb.toString();
-    }
-    
+    } 
 }
