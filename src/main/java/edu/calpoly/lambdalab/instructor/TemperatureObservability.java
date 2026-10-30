@@ -5,10 +5,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** Emits sanitized, single-line JSON events for CloudWatch Logs Insights.
+ * 
  * @author Javier Gonzalez-Sanchez
  * @version 1.0
  */
 final class TemperatureObservability {
+  
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private TemperatureObservability() { }
