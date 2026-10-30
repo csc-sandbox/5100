@@ -152,7 +152,11 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
             }
 
             // Convert body to distances and thresholds
-            List<Double> distances = (List<Double>) body.get("distances");
+            List<Double> distances = new ArrayList<>();
+            for (Object dist : (List<Object>) body.get("distances")) {
+                distances.add(((Number) dist).doubleValue());
+            }
+
             double threshold = (Double) body.get("threshold");
 
             // Get the response result as a Map
@@ -226,7 +230,7 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
      * @return A map of String to Object containing the safety status and minimum distance recorded
      */
     private Map<String, Object> safetyCheck(List<Double> distances, double threshold) {
-        double minDist = Integer.MAX_VALUE;
+        double minDist = Double.MAX_VALUE;
         for (double dist : distances) {
             if (dist < 0) {
                 throw new IllegalArgumentException("Invalid distance value: A distance of " + dist + " was found which is not greater than 0.");
