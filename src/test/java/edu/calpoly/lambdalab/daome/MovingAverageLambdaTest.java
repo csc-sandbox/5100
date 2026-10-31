@@ -53,7 +53,10 @@ public class MovingAverageLambdaTest {
         var mockStorage = new MockStorage();
         var id = "3f1c9a2e-7b4d-4e8a-9c21-5d6f0b7a1e44";
         mockStorage.save(id,
-                createMockStorageItem(UUID.fromString(id), List.of(3, 5, 7, 9), 2, List.of(4.0, 6.0, 8.0)));
+                new ObjectMapper().writeValueAsString(new MovingAverageData(UUID.fromString(id),
+                        List.of(3, 5, 7, 9),
+                        2,
+                        List.of(4.0, 6.0, 8.0))));
         var getEvent = new HashMap<String, Object>(Map.of("httpMethod",
                 "GET",
                 "queryStringParameters",
@@ -61,7 +64,7 @@ public class MovingAverageLambdaTest {
         var lambda = new MovingAverageLambda(mockStorage, new MockMessaging());
         Map<String, Object> response = lambda.handleRequest(getEvent, null);
         assertEquals(200, response.get("statusCode"));
-        assertTrue(response.get("body").toString().contains("\"movingAverage\":[4.0,6.0,8.0]"));
+        assertTrue(((String) response.get("body")).contains("\"movingAverage\":[4.0,6.0,8.0]"));
     }
 
 
@@ -91,18 +94,18 @@ public class MovingAverageLambdaTest {
             throw new RuntimeException(e);
         }
     }
+
     @Test
-    void rejectInvalidUUID(){
+    void rejectInvalidUUID() {
         Map<String, String> queryStringParameters = new HashMap<>();
         queryStringParameters.put("id", "invalid");
-        Map<String, Object> getEvent = new HashMap<>(Map.of("httpMethod",
-                "GET",
-                "queryStringParameters",
-                queryStringParameters));
+        Map<String, Object> getEvent =
+                new HashMap<>(Map.of("httpMethod", "GET", "queryStringParameters", queryStringParameters));
         var lambda = new MovingAverageLambda(new MockStorage(), new MockMessaging());
         Map<String, Object> getResponse = lambda.handleRequest(getEvent, null);
         assertEquals(400, getResponse.get("statusCode"));
     }
+
     private String createMockStorageItem(UUID id, List<Integer> samples, Integer windowSize,
                                          List<Double> movingAverage) throws JsonProcessingException {
         ObjectMapper mapper = new ObjectMapper();
@@ -110,10 +113,11 @@ public class MovingAverageLambdaTest {
         json.put("owner", "DavidMontiel");
         json.put("operation", "moving-average");
         json.put("responseJson",
-                mapper.writeValueAsString(new MovingAverageData(id.toString(),
+                mapper.readTree(mapper.writeValueAsString(new MovingAverageData(id,
                         samples,
                         windowSize,
-                        movingAverage)));
+                        movingAverage))));
+
         return mapper.writeValueAsString(json);
     }
 
@@ -122,12 +126,12 @@ public class MovingAverageLambdaTest {
 
         @Override
         public void publish(String id, String json) {
-
+            this.message = json;
         }
     }
 
 
-     private static class MockStorage implements MovingAverageLambda.Storage {
+    private static class MockStorage implements MovingAverageLambda.Storage {
         public final Map<String, Object> results = new LinkedHashMap<>();
         private final ObjectMapper mapper = new ObjectMapper();
 
@@ -139,13 +143,13 @@ public class MovingAverageLambdaTest {
             var map = new LinkedHashMap<String, Object>();
             map.put("owner", "DavidMontiel");
             map.put("operation", "moving-average");
-            map.put("responseJson", json);
-
             try {
+                map.put("responseJson", mapper.readTree(json));
                 results.put(id, mapper.writeValueAsString(map));
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
             }
+
         }
 
         @Override
@@ -155,11 +159,10 @@ public class MovingAverageLambdaTest {
             Map<String, Object> map = null;
             try {
                 map = mapper.readValue(json, new TypeReference<Map<String, Object>>() {});
+                return mapper.writeValueAsString(map.get("responseJson"));
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
             }
-            String response = (String) map.get("responseJson");
-            return response;
         }
     }
 }
