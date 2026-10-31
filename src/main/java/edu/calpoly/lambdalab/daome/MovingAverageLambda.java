@@ -64,7 +64,7 @@ public class MovingAverageLambda implements RequestHandler<Map<String, Object>, 
         Integer windowSize = mapper.convertValue(input.get("window"), Integer.class);
         List<Integer> samples = mapper.convertValue(input.get("samples"), new TypeReference<>() {});
         var movingAverages = movingAverage(samples, windowSize);
-        var storageData = new MovingAverageData(id, samples, windowSize, movingAverages);
+        var storageData = new MovingAverageData(UUID.fromString(id), samples, windowSize, movingAverages);
         var json = mapper.writeValueAsString(storageData);
         storage.save(id, json);
         message.publish(id, json);
