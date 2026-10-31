@@ -5,33 +5,18 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 
 public class MovingAverageMqttClient implements AutoCloseable {
-    public static final String broker = "tcp://broker.hivemq.com:1883";
+    public static final String BROKER = "tcp://broker.hivemq.com:1883";
     public static final String EVENT_TOPIC = "csc5100/events/moving-average";
-    private static final String ACK_TOPIC = "csc5100/status/moving-average";
+    public static final String ACK_TOPIC = "csc5100/status/moving-average";
     private static final String clientId = MqttClient.generateClientId();
     private final MqttClient mqttClient;
     private final MovingAverageMqttCallback callback;
 
     public MovingAverageMqttClient() throws MqttException {
-        this.mqttClient = new MqttClient(broker, clientId);
+        this.mqttClient = new MqttClient(BROKER, clientId);
         this.callback = new MovingAverageMqttCallback(ACK_TOPIC, mqttClient);
     }
 
-    public static void main(String[] args) throws Exception {
-
-        var consoleClient = new MovingAverageMqttClient();
-        consoleClient.connect();
-
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                consoleClient.close();
-            } catch (Exception e) {
-                System.err.println("Error on shutdown");
-            }
-        }));
-
-        Thread.currentThread().join();
-    }
 
     public void connect() throws MqttException {
         var options = new MqttConnectOptions();
