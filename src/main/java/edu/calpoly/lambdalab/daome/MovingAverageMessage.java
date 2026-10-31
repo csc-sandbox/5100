@@ -21,8 +21,8 @@ public class MovingAverageMessage implements MovingAverageLambda.Message {
 
         var message = String.format("""
                 {
-                    "id": %s,
-                    "operation": %s,
+                    "id": "%s",
+                    "operation": "%s",
                     "result": %s
                 }
                 """, id, MovingAverageLambda.OPERATION, json);
