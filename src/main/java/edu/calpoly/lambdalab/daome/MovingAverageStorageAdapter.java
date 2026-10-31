@@ -1,5 +1,8 @@
 package edu.calpoly.lambdalab.daome;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import edu.calpoly.lambdalab.daome.data.MovingAverageLambdaStorageData;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -12,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 public class MovingAverageStorageAdapter implements MovingAverageLambda.Storage {
+    private static final ObjectMapper mapper = new ObjectMapper();
     private final S3Client s3Client = S3Client.create();
     private final DynamoDbClient dynamoDbClient = DynamoDbClient.create();
     private final String dbTable;
@@ -23,15 +27,16 @@ public class MovingAverageStorageAdapter implements MovingAverageLambda.Storage 
     }
 
     @Override
-    public void save(String id, String json) {
-        var storedJson = String.format("""
-                {
-                "id":  "%s",
-                "owner": "%s",
-                "operation": "%s",
-                "responseJson": "%s"
-                }
-                """, id, MovingAverageLambda.OWNER, MovingAverageLambda.OPERATION, json);
+    public void save(String id, String json) throws RuntimeException {
+
+        String storedJson = null;
+        try {
+            storedJson = mapper.writeValueAsString(new MovingAverageLambdaStorageData(MovingAverageLambda.OWNER,
+                    MovingAverageLambda.OPERATION,
+                    mapper.readTree(json)));
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
 
         Map<String, AttributeValue> storedMap = Map.of("id",
                 AttributeValue.fromS(id),
@@ -64,10 +69,10 @@ public class MovingAverageStorageAdapter implements MovingAverageLambda.Storage 
             return null;
         }
         var item = result.item();
-        if (!item.get("operation").s().isEmpty() || !item.get("operation").s().equals(MovingAverageLambda.OPERATION)) {
+        if (item.get("operation") == null || !item.get("operation").s().equals(MovingAverageLambda.OPERATION)) {
             return null;
         }
-        if (!item.get("owner").s().isEmpty() || !item.get("owner").s().equals(MovingAverageLambda.OWNER)) {return null;}
+        if (item.get("owner") == null || !item.get("owner").s().equals(MovingAverageLambda.OWNER)) {return null;}
 
         return item.get("responseJson").s();
     }
