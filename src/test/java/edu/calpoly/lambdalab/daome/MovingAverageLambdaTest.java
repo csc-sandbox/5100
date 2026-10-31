@@ -4,6 +4,7 @@ package edu.calpoly.lambdalab.daome;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import edu.calpoly.lambdalab.daome.data.MovingAverageData;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -90,7 +91,18 @@ public class MovingAverageLambdaTest {
             throw new RuntimeException(e);
         }
     }
-
+    @Test
+    void rejectInvalidUUID(){
+        Map<String, String> queryStringParameters = new HashMap<>();
+        queryStringParameters.put("id", "invalid");
+        Map<String, Object> getEvent = new HashMap<>(Map.of("httpMethod",
+                "GET",
+                "queryStringParameters",
+                queryStringParameters));
+        var lambda = new MovingAverageLambda(new MockStorage(), new MockMessaging());
+        Map<String, Object> getResponse = lambda.handleRequest(getEvent, null);
+        assertEquals(400, getResponse.get("statusCode"));
+    }
     private String createMockStorageItem(UUID id, List<Integer> samples, Integer windowSize,
                                          List<Double> movingAverage) throws JsonProcessingException {
         ObjectMapper mapper = new ObjectMapper();
@@ -109,17 +121,13 @@ public class MovingAverageLambdaTest {
         private String message;
 
         @Override
-        public void publishSns(String json) {
-            message = json;
-        }
+        public void publish(String id, String json) {
 
-        @Override
-        public void publishSqs(String json) {
-            message = json;
         }
     }
 
-    private static class MockStorage implements MovingAverageLambda.Storage {
+
+     private static class MockStorage implements MovingAverageLambda.Storage {
         public final Map<String, Object> results = new LinkedHashMap<>();
         private final ObjectMapper mapper = new ObjectMapper();
 
