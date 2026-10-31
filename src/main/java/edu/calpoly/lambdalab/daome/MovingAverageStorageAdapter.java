@@ -24,25 +24,31 @@ public class MovingAverageStorageAdapter implements MovingAverageLambda.Storage 
 
     @Override
     public void save(String id, String json) {
+        var storedJson = String.format("""
+                {
+                "id":  "%s",
+                "owner": "%s",
+                "operation": "%s",
+                "responseJson": "%s"
+                }
+                """, id, MovingAverageLambda.OWNER, MovingAverageLambda.OPERATION, json);
+
+        Map<String, AttributeValue> storedMap = Map.of("id",
+                AttributeValue.fromS(id),
+                "owner",
+                AttributeValue.fromS(MovingAverageLambda.OWNER),
+                "operation",
+                AttributeValue.fromS(MovingAverageLambda.OPERATION),
+                "responseJson",
+                AttributeValue.fromS(json));
 
         s3Client.putObject(PutObjectRequest
                 .builder()
                 .bucket(s3Bucket)
                 .key("Daome/MovingAverageLambda/" + id + ".json")
                 .contentType("application/json")
-                .build(), RequestBody.fromBytes(json.getBytes(StandardCharsets.UTF_8)));
-        dynamoDbClient.putItem(PutItemRequest
-                .builder()
-                .tableName(dbTable)
-                .item(Map.of("id",
-                        AttributeValue.fromS(id),
-                        "owner",
-                        AttributeValue.fromS(MovingAverageLambda.OWNER),
-                        "operation",
-                        AttributeValue.fromS(MovingAverageLambda.OPERATION),
-                        "responseJson",
-                        AttributeValue.fromS(json)))
-                .build());
+                .build(), RequestBody.fromBytes(storedJson.getBytes(StandardCharsets.UTF_8)));
+        dynamoDbClient.putItem(PutItemRequest.builder().tableName(dbTable).item(storedMap).build());
     }
 
     @Override

@@ -11,9 +11,10 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import edu.calpoly.lambdalab.daome.data.MovingAverageData;
 
 public class MovingAverageLambda implements RequestHandler<Map<String, Object>, Map<String, Object>> {
-    public static final String OPERATION = "MovingAverage";
+    public static final String OPERATION = "MovingAverageLambda";
     public static final String OWNER = "DavidMontiel";
     private static final ObjectMapper mapper = new ObjectMapper();
     private final Storage storage;
@@ -21,8 +22,7 @@ public class MovingAverageLambda implements RequestHandler<Map<String, Object>, 
 
     public MovingAverageLambda() {
         this(new MovingAverageStorageAdapter(System.getenv("A04_DYNAMODB_TABLE"), System.getenv("A04_S3_BUCKET")),
-                new MovingAverageMessage(System.getenv("A04_SNS_TOPIC_ARN"),
-                        System.getenv("A04_SQS_QUEUE_URL")));
+                new MovingAverageMessage(System.getenv("A04_SNS_TOPIC_ARN"), System.getenv("A04_SQS_QUEUE_URL")));
     }
 
     MovingAverageLambda(Storage storage, Message message) {
@@ -54,24 +54,20 @@ public class MovingAverageLambda implements RequestHandler<Map<String, Object>, 
         var input = mapper.readValue(event.get("queryStringParameters").toString(),
                 new TypeReference<Map<String, Object>>() {});
         var id = (String) input.get("id");
-        return mapper.readValue(storage.get(id), new TypeReference<>() {
-        });
+        return mapper.readValue(storage.get(id), new TypeReference<>() {});
     }
 
     Map<String, Object> handlePost(String id, Map<String, Object> event) throws RuntimeException,
             JsonProcessingException {
         String body = event.get("body").toString();
-        var input = mapper.readValue(body, new TypeReference<Map<String, Object>>() {
-        });
+        var input = mapper.readValue(body, new TypeReference<Map<String, Object>>() {});
         Integer windowSize = mapper.convertValue(input.get("window"), Integer.class);
-        List<Integer> samples = mapper.convertValue(input.get("samples"), new TypeReference<>() {
-        });
+        List<Integer> samples = mapper.convertValue(input.get("samples"), new TypeReference<>() {});
         var movingAverages = movingAverage(samples, windowSize);
         var storageData = new MovingAverageData(id, samples, windowSize, movingAverages);
         var json = mapper.writeValueAsString(storageData);
         storage.save(id, json);
-        message.publishSns(json);
-        message.publishSqs(json);
+        message.publish(id, json);
 
         return new HashMap<>(Map.of("id", id, "movingAverage", storageData.averages()));
     }
@@ -110,9 +106,7 @@ public class MovingAverageLambda implements RequestHandler<Map<String, Object>, 
 
     public interface Message {
         // Separate due to requirements
-        void publishSns(String json);
-
-        void publishSqs(String json);
+        void publish(String id, String json);
     }
 
 }

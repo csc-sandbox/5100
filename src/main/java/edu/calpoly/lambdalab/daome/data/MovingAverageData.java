@@ -1,12 +1,8 @@
-package edu.calpoly.lambdalab.daome;
+package edu.calpoly.lambdalab.daome.data;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 public record MovingAverageData(@JsonProperty(value = "id", required = true) String id,
                                 @JsonProperty(value = "samples", required = true) List<Integer> samples,

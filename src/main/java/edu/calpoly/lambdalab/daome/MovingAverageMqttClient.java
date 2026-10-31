@@ -10,19 +10,27 @@ public class MovingAverageMqttClient implements AutoCloseable {
     private static final String ACK_TOPIC = "csc5100/status/moving-average";
     private static final String clientId = MqttClient.generateClientId();
     private final MqttClient mqttClient;
+    private final MovingAverageMqttCallback callback;
 
     public MovingAverageMqttClient() throws MqttException {
         this.mqttClient = new MqttClient(broker, clientId);
+        this.callback = new MovingAverageMqttCallback(ACK_TOPIC, mqttClient);
     }
 
     public static void main(String[] args) throws Exception {
-        String broker = args.length > 0 ? args[0] : MovingAverageMqttClient.broker;
 
-        try (var desktopClient = new MovingAverageMqttClient()) {
-            desktopClient.connect();
-        } catch (MqttException ignored) {
+        var consoleClient = new MovingAverageMqttClient();
+        consoleClient.connect();
 
-        }
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                consoleClient.close();
+            } catch (Exception e) {
+                System.err.println("Error on shutdown");
+            }
+        }));
+
+        Thread.currentThread().join();
     }
 
     public void connect() throws MqttException {
@@ -30,7 +38,7 @@ public class MovingAverageMqttClient implements AutoCloseable {
         options.setCleanSession(true);
         options.setAutomaticReconnect(true);
 
-        mqttClient.setCallback(new MovingAverageMqttCallback(ACK_TOPIC, mqttClient));
+        mqttClient.setCallback(callback);
 
         mqttClient.connect(options);
         mqttClient.subscribe(EVENT_TOPIC, 1);
@@ -41,9 +49,9 @@ public class MovingAverageMqttClient implements AutoCloseable {
 
     @Override
     public void close() throws Exception {
-
         try {
             if (mqttClient.isConnected()) {
+                callback.close();
                 mqttClient.disconnect();
             }
         } finally {

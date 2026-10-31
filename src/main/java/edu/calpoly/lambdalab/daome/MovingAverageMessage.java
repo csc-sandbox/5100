@@ -17,12 +17,18 @@ public class MovingAverageMessage implements MovingAverageLambda.Message {
     }
 
     @Override
-    public void publishSns(String json) {
-        snsClient.publish(PublishRequest.builder().topicArn(topicArn).message(json).build());
+    public void publish(String id, String json) {
+
+        var message = String.format("""
+                {
+                    "id": %s,
+                    "operation": %s,
+                    "result": %s
+                }
+                """, id, MovingAverageLambda.OPERATION, json);
+
+        snsClient.publish(PublishRequest.builder().topicArn(topicArn).message(message).build());
+        sqsClient.sendMessage(SendMessageRequest.builder().queueUrl(sqsUrl).messageBody(message).build());
     }
 
-    @Override
-    public void publishSqs(String json) {
-        sqsClient.sendMessage(SendMessageRequest.builder().queueUrl(sqsUrl).messageBody(json).build());
-    }
 }
