@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 
 public class MovingAverageMqttCallback implements MqttCallback, MovingAverageAckPublisher, AutoCloseable {
     private static final ObjectMapper mapper = new ObjectMapper();
-    private static final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private  final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final MqttClient client;
     private final String ackTopic;
 
