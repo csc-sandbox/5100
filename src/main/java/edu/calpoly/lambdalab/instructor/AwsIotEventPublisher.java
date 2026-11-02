@@ -6,7 +6,12 @@ import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.iotdataplane.IotDataPlaneClient;
 import software.amazon.awssdk.services.iotdataplane.model.PublishRequest;
 
-/** Publishes the unchanged SQS event JSON to AWS IoT Core MQTT subscribers. */
+/**
+ * Publishes A04 event JSON to AWS IoT Core MQTT topics through the AWS IoT Data Plane client using quality of service level 1.
+ *
+ * @author Javier Gonzalez-Sanchez
+ * @version 2.0 (2026-10-29)
+ */
 public class AwsIotEventPublisher implements AutoCloseable {
   public static final String TOPIC = "csc5100/events/temperature";
   private final IotDataPlaneClient client;
