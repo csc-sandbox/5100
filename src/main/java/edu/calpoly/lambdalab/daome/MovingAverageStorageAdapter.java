@@ -2,7 +2,6 @@ package edu.calpoly.lambdalab.daome;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import edu.calpoly.lambdalab.daome.data.MovingAverageLambdaStorageData;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -29,30 +28,26 @@ public class MovingAverageStorageAdapter implements MovingAverageLambda.Storage 
     @Override
     public void save(String id, String json) throws RuntimeException {
 
-        String storedJson = null;
+        String storedJsonString;
+        Map<String, AttributeValue> storedMap;
         try {
-            storedJson = mapper.writeValueAsString(new MovingAverageLambdaStorageData(MovingAverageLambda.OWNER,
-                    MovingAverageLambda.OPERATION,
-                    mapper.readTree(json)));
+            storedJsonString = mapper.writeValueAsString(mapper.readTree(json));
+            storedMap = Map.of("owner",
+                    AttributeValue.fromS(MovingAverageLambda.OWNER),
+                    "operation",
+                    AttributeValue.fromS("moving-average"),
+                    "responseJson",
+                    AttributeValue.fromS(mapper.writeValueAsString(mapper.readTree(json))));
         } catch (JsonProcessingException e) {
             throw new RuntimeException(e);
         }
-
-        Map<String, AttributeValue> storedMap = Map.of("id",
-                AttributeValue.fromS(id),
-                "owner",
-                AttributeValue.fromS(MovingAverageLambda.OWNER),
-                "operation",
-                AttributeValue.fromS(MovingAverageLambda.OPERATION),
-                "responseJson",
-                AttributeValue.fromS(json));
 
         s3Client.putObject(PutObjectRequest
                 .builder()
                 .bucket(s3Bucket)
                 .key("Daome/MovingAverageLambda/" + id + ".json")
                 .contentType("application/json")
-                .build(), RequestBody.fromBytes(storedJson.getBytes(StandardCharsets.UTF_8)));
+                .build(), RequestBody.fromBytes(storedJsonString.getBytes(StandardCharsets.UTF_8)));
         dynamoDbClient.putItem(PutItemRequest.builder().tableName(dbTable).item(storedMap).build());
     }
 
