@@ -16,7 +16,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
  * @author Javier Gonzalez-Sanchez
  * @version 2.0 (2026-10-29)
  */
-final class TemperatureStorage implements TemperatureLambda.Storage {
+final class TemperatureStorage implements Storage {
   private final DynamoDbClient dynamo = DynamoDbClient.create();
   private final S3Client s3 = S3Client.create();
   private final String table;

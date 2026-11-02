@@ -12,7 +12,7 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
  * @author Javier Gonzalez-Sanchez
  * @version 2.0 (2026-10-29)
  */
-final class TemperatureMessaging implements TemperatureLambda.Messaging {
+final class TemperatureMessaging implements Messaging {
   private final SnsClient sns = SnsClient.create();
   private final SqsClient sqs = SqsClient.create();
   private final String topicArn;
