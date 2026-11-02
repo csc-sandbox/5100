@@ -3,7 +3,12 @@ package edu.calpoly.lambdalab.instructor;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Map;
 
-/** Explicit, allowlisted routing; never accept arbitrary MQTT topics from SQS. */
+/**
+ * Maps allowlisted A04 Lambda operations to MQTT topic names and rejects unrecognized operations instead of trusting arbitrary topics in incoming events.
+ *
+ * @author Javier Gonzalez-Sanchez
+ * @version 2.0 (2026-10-29)
+ */
 final class A04MqttTopics {
   private static final String PREFIX = "csc5100/events/";
   private static final Map<String, String> ROUTES = Map.ofEntries(

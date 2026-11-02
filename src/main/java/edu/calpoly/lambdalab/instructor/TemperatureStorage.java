@@ -10,7 +10,12 @@ import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
-/** Shared A04 storage adapter; the DynamoDB record is the GET source of truth. */
+/**
+ * Persists temperature readings to Amazon S3 and DynamoDB and retrieves stored results from DynamoDB. DynamoDB serves as the source of truth for GET requests.
+ *
+ * @author Javier Gonzalez-Sanchez
+ * @version 2.0 (2026-10-29)
+ */
 final class TemperatureStorage implements TemperatureLambda.Storage {
   private final DynamoDbClient dynamo = DynamoDbClient.create();
   private final S3Client s3 = S3Client.create();

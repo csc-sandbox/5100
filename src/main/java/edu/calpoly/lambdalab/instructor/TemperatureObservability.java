@@ -4,10 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** Emits sanitized, single-line JSON events for CloudWatch Logs Insights.
- * 
+/**
+ * Emits sanitized, single-line structured JSON telemetry for temperature processing and AWS service operations, suitable for Amazon CloudWatch Logs Insights.
+ *
  * @author Javier Gonzalez-Sanchez
- * @version 1.0
+ * @version 2.0 (2026-10-29)
  */
 final class TemperatureObservability {
   

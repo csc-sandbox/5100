@@ -9,7 +9,12 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiConsumer;
 
-/** A04 SQS consumer: validates and forwards JSON to both MQTT brokers. */
+/**
+ * Consumes A04 SQS records, validates event identifiers and payloads, resolves MQTT topics, and forwards events to configured AWS IoT Core and HiveMQ publishers.
+ *
+ * @author Javier Gonzalez-Sanchez
+ * @version 2.0 (2026-10-29)
+ */
 public class EventProcessorLambda implements RequestHandler<Map<String, Object>, Void> {
   private final ObjectMapper mapper = new ObjectMapper();
   private final BiConsumer<String, String> publisher;

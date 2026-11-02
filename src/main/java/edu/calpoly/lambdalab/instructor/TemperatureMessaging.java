@@ -6,7 +6,12 @@ import software.amazon.awssdk.services.sns.model.PublishRequest;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
-/** Sends the same event independently to SNS and SQS; neither depends on the other. */
+/**
+ * Publishes temperature events independently to Amazon SNS and Amazon SQS, reporting each operation through structured observability logs.
+ *
+ * @author Javier Gonzalez-Sanchez
+ * @version 2.0 (2026-10-29)
+ */
 final class TemperatureMessaging implements TemperatureLambda.Messaging {
   private final SnsClient sns = SnsClient.create();
   private final SqsClient sqs = SqsClient.create();
