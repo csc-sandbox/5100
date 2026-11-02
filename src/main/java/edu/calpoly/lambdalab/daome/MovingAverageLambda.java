@@ -45,15 +45,16 @@ public class MovingAverageLambda implements RequestHandler<Map<String, Object>, 
         } catch (Exception e) {
             return httpResponse(400, "{\"error\":\"Invalid request\"}");
         }
-
     }
 
     Map<String, Object> handleGet(Map<String, Object> event) throws RuntimeException, JsonProcessingException {
-        if (event.get("queryStringParameters") == null) {throw new RuntimeException();}
+        if (event.get("queryStringParameters") == null) {
+            throw new RuntimeException();
+        }
 
-        var input = mapper.readValue(event.get("queryStringParameters").toString(),
-                new TypeReference<Map<String, Object>>() {});
-        var id = (String) input.get("id");
+        var input =
+                mapper.convertValue(event.get("queryStringParameters"), new TypeReference<Map<String, String>>() {});
+        var id = input.get("id");
         return mapper.readValue(storage.get(id), new TypeReference<>() {});
     }
 

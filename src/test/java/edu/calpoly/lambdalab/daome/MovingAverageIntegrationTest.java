@@ -21,22 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("integration")
 public class MovingAverageIntegrationTest {
     private final ObjectMapper mapper = new ObjectMapper();
-    private final String topic = MovingAverageMqttClient.EVENT_TOPIC;
     private final ConcurrentHashMap<UUID, CountDownLatch> latches = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, MovingAverageLambdaEventResponse> acks = new ConcurrentHashMap<>();
-    private final String sampleData2 = """
-                {
-                "id": "hello",
-                "operation": "MovingAverageLambda",
-                "result":
-                     {
-                        "id": "hello",
-                        "samples": [-1, -2, 3, 4, 5],
-                        "window": "-1"
-                        "MovingAverage":  [2, 7,4]
-                    }
-                }
-            """;
     private MovingAverageMqttClient desktopClient;
     private MqttClient testClient;
 
@@ -58,6 +44,7 @@ public class MovingAverageIntegrationTest {
     }
 
     private void publish(Object event) throws Exception {
+        String topic = MovingAverageMqttClient.EVENT_TOPIC;
         testClient.publish(topic, new MqttMessage(mapper.writeValueAsBytes(event)));
     }
 
