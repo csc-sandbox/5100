@@ -8,8 +8,10 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Temperature conversion API. Legacy GET conversions remain read-only.
- * A04 POST persists when both storage environment variables are configured.
+ * Handles the CSC 5100 temperature conversion REST API, including GET lookups and POST requests that can persist readings and publish events through injected storage and messaging adapters.
+ *
+ * @author Javier Gonzalez-Sanchez
+ * @version 2.0 (2026-10-29)
  */
 public class TemperatureLambda implements RequestHandler<Map<String, Object>, Map<String, Object>> {
   interface Storage {
