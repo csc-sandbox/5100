@@ -7,7 +7,7 @@ import org.eclipse.paho.client.mqttv3.MqttException;
 public class MovingAverageMqttClient implements AutoCloseable {
     public static final String BROKER = "tcp://broker.hivemq.com:1883";
     public static final String EVENT_TOPIC = "csc5100/events/moving-average";
-    public static final String ACK_TOPIC = "csc5100/status/moving-average";
+    public static final String ACK_TOPIC = "csc5100/status/";
     private static final String clientId = MqttClient.generateClientId();
     private final MqttClient mqttClient;
     private final MovingAverageMqttCallback callback;
@@ -29,7 +29,6 @@ public class MovingAverageMqttClient implements AutoCloseable {
         mqttClient.subscribe(EVENT_TOPIC, 1);
 
         System.out.println("Connected to Broker");
-
     }
 
     @Override
