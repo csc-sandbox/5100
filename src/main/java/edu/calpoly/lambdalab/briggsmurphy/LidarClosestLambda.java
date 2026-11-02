@@ -297,7 +297,7 @@ public class LidarClosestLambda
 
       // Task 4: publish independently to SNS using the existing format.
       Map<String, Object> publishedEvent = new HashMap<>();
-      publishedEvent.put("uuid", id);
+      publishedEvent.put("id", id);
       publishedEvent.put("operation", "LidarClosestLambda");
       publishedEvent.put("result", result);
 
