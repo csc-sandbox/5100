@@ -12,7 +12,7 @@ import java.util.function.Consumer;
 public class LidarSafetyMqttSubscriber {
     public static final String DEFAULT_BROKER = "tcp://broker.hivemq.com:1883";
     public static final String EVENT_PREFIX = "csc5100/events/";
-    public static final String STATUS_PREFIX = "csc1500/status/";
+    public static final String STATUS_PREFIX = "csc5100/status/";
     public static final String OPERATION = "LidarSafetyLambda";
 
     private static final ObjectMapper mapper = new ObjectMapper();

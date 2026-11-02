@@ -13,6 +13,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("integration")
 public class LidarSafetyMqttLiveIntegrationTest {
+    public static final String DEFAULT_BROKER = "tcp://broker.hivemq.com:1883";
+    public static final String EVENT_PREFIX = "csc5100/events/";
+    public static final String STATUS_PREFIX = "csc5100/status/";
+    public static final String OPERATION = "LidarSafetyLambda";
+
     @Test
     void receiveEventAndValidAck() throws MqttException, InterruptedException {
         String id = UUID.randomUUID().toString();
@@ -28,7 +33,7 @@ public class LidarSafetyMqttLiveIntegrationTest {
         MqttClient ackSubscriber = null;
         MqttClient eventPublisher = null;
         try {
-            ackSubscriber = new MqttClient(LidarSafetyMqttSubscriber.DEFAULT_BROKER, "csc5100-lidar-safety-live-integration-test-" + UUID.randomUUID());
+            ackSubscriber = new MqttClient(DEFAULT_BROKER, "csc5100-lidar-safety-live-integration-test-" + UUID.randomUUID());
             ackSubscriber.setCallback(new MqttCallback() {
                 @Override
                 public void connectionLost(Throwable cause) {
@@ -37,7 +42,7 @@ public class LidarSafetyMqttLiveIntegrationTest {
                 @Override
                 public void messageArrived(String topic, MqttMessage message) throws Exception {
                     String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
-                    if (payload.contains("\"id\":\"" + id + "\"") && payload.contains("\"operation\":\"" + LidarSafetyMqttSubscriber.OPERATION + "\"") && payload.contains("\"status\":\"received\"")) {
+                    if (payload.contains("\"id\":\"" + id + "\"") && payload.contains("\"operation\":\"" + OPERATION + "\"") && payload.contains("\"status\":\"received\"")) {
                         ackReceived.countDown();
                     }
                 }
@@ -47,16 +52,16 @@ public class LidarSafetyMqttLiveIntegrationTest {
                 }
             });
             ackSubscriber.connect(options);
-            ackSubscriber.subscribe(LidarSafetyMqttSubscriber.STATUS_PREFIX + id, 1);
+            ackSubscriber.subscribe(STATUS_PREFIX + id, 1);
 
-            eventPublisher = new MqttClient(LidarSafetyMqttSubscriber.DEFAULT_BROKER, "csc5100-lidar-safety-live-integration-test-" + UUID.randomUUID());
-            String event = "{\"id\":\"" + id + "\", \"operation\":\"" + LidarSafetyMqttSubscriber.OPERATION + "\", \"result\":{\"status\":\"WARNING\", \"minDist\":0.2}}";
+            eventPublisher = new MqttClient(DEFAULT_BROKER, "csc5100-lidar-safety-live-integration-test-" + UUID.randomUUID());
+            String event = "{\"id\":\"" + id + "\", \"operation\":\"" + OPERATION + "\", \"result\":{\"status\":\"WARNING\", \"minDist\":0.2}}";
             MqttMessage msg = new MqttMessage(event.getBytes(StandardCharsets.UTF_8));
             msg.setQos(1);
             eventPublisher.connect(options);
-            eventPublisher.publish(LidarSafetyMqttSubscriber.EVENT_PREFIX + LidarSafetyMqttSubscriber.OPERATION, msg);
+            eventPublisher.publish(EVENT_PREFIX + OPERATION, msg);
 
-            assertTrue(ackReceived.await(10, TimeUnit.SECONDS), "Timed out waiting for ACK on topic " + LidarSafetyMqttSubscriber.STATUS_PREFIX + id);
+            assertTrue(ackReceived.await(10, TimeUnit.SECONDS), "Timed out waiting for ACK on topic " + STATUS_PREFIX + id);
         } finally {
             if (ackSubscriber != null) {
                 if (ackSubscriber.isConnected()) {
