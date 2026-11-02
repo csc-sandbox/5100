@@ -18,7 +18,6 @@ public class MovingAverageMessage implements MovingAverageLambda.Message {
 
     @Override
     public void publish(String id, String json) {
-
         var message = String.format("""
                 {
                     "id": "%s",
@@ -26,9 +25,16 @@ public class MovingAverageMessage implements MovingAverageLambda.Message {
                     "result": %s
                 }
                 """, id, MovingAverageLambda.OPERATION, json);
-
-        snsClient.publish(PublishRequest.builder().topicArn(topicArn).message(message).build());
-        sqsClient.sendMessage(SendMessageRequest.builder().queueUrl(sqsUrl).messageBody(message).build());
+        try {
+            snsClient.publish(PublishRequest.builder().topicArn(topicArn).message(message).build());
+        } catch (Exception e) {
+            System.err.println("Error while publishing to SNS");
+        }
+        try {
+            sqsClient.sendMessage(SendMessageRequest.builder().queueUrl(sqsUrl).messageBody(message).build());
+        } catch (Exception e) {
+            System.err.println("Error while sending Message to SQS");
+        }
     }
 
 }
