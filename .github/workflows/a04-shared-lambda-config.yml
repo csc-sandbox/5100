@@ -1,0 +1,118 @@
+name: A04 Shared Lambda Configuration
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Preview changes or apply shared A04 environment variables"
+        required: true
+        type: choice
+        default: dry-run
+        options:
+          - dry-run
+          - apply
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: a04-shared-lambda-config
+  cancel-in-progress: false
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Validate shared resources and configure functions
+        shell: bash
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          import tempfile
+          import time
+
+          def aws(*args):
+              p = subprocess.run(["aws", *args, "--output", "json"], text=True,
+                                 capture_output=True)
+              if p.returncode:
+                  raise RuntimeError(f"aws {' '.join(args[:3])}: {p.stderr.strip()}")
+              return json.loads(p.stdout) if p.stdout.strip() else {}
+
+          region = os.environ["AWS_REGION"]
+          mode = os.environ["MODE"]
+          functions = [
+              "csc5100-encrypt", "csc5100-gaze-clusters",
+              "csc5100-dominant-affect", "csc5100-nearest-sample",
+              "csc5100-robot-distance", "csc5100-robot-reachability",
+              "csc5100-lidar-closest", "csc5100-lidar-safety",
+              "csc5100-data-freshness", "csc5100-moving-average",
+              "csc5100-coordinate-normalizer", "csc5100-event-rate",
+          ]
+
+          # Fail before changing any function if a required shared resource is absent.
+          aws("dynamodb", "describe-table", "--table-name", "csc5100-results")
+          aws("s3api", "head-bucket", "--bucket", "csc5100-results")
+          account = aws("sts", "get-caller-identity")["Account"]
+          topic_arn = f"arn:aws:sns:{region}:{account}:csc5100-events"
+          aws("sns", "get-topic-attributes", "--topic-arn", topic_arn)
+          queue_url = aws("sqs", "get-queue-url", "--queue-name", "csc5100-processing")["QueueUrl"]
+          aws("sqs", "get-queue-attributes", "--queue-url", queue_url,
+              "--attribute-names", "QueueArn")
+
+          desired = {
+              "A04_DYNAMODB_TABLE": "csc5100-results",
+              "A04_S3_BUCKET": "csc5100-results",
+              "A04_SNS_TOPIC_ARN": topic_arn,
+              "A04_SQS_QUEUE_URL": queue_url,
+          }
+
+          # Preflight all 12 functions before any updates.
+          configurations = {}
+          for name in functions:
+              config = aws("lambda", "get-function-configuration", "--function-name", name)
+              if config.get("State") not in (None, "Active") or config.get("LastUpdateStatus") == "InProgress":
+                  raise RuntimeError(f"{name} is not ready for configuration update")
+              configurations[name] = config
+
+          print(f"Mode: {mode}; region: {region}; validated four shared resources and 12 Lambdas.")
+          errors = []
+          for name in functions:
+              config = configurations[name]
+              existing = config.get("Environment", {}).get("Variables", {})
+              merged = {**existing, **desired}
+              changed = sorted(k for k in desired if existing.get(k) != desired[k])
+              print(f"{name}: {'update ' + ', '.join(changed) if changed else 'already configured'}")
+              if mode == "dry-run" or not changed:
+                  continue
+              try:
+                  # Preserve unrelated environment variables. Use revision to avoid overwriting
+                  # concurrent configuration changes. AWS replaces the full Variables map.
+                  with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as f:
+                      json.dump({"Variables": merged}, f)
+                      f.flush()
+                      aws("lambda", "update-function-configuration",
+                          "--function-name", name,
+                          "--revision-id", config["RevisionId"],
+                          "--environment", "file://" + f.name)
+                  subprocess.run(["aws", "lambda", "wait", "function-updated-v2",
+                                  "--function-name", name], check=True)
+              except Exception as e:
+                  errors.append(f"{name}: {e}")
+          if errors:
+              print("Configuration failures:\n" + "\n".join(errors), file=sys.stderr)
+              sys.exit(1)
+          print("Configuration completed. IAM permissions and end-to-end integration require separate verification.")
+          PY
