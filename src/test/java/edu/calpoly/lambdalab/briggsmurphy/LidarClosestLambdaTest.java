@@ -216,7 +216,7 @@ class LidarClosestLambdaTest {
 
     assertEquals(200, response.get("statusCode"));
     assertDoesNotThrow(() -> UUID.fromString(id));
-    assertTrue(publishedEvent[0].contains("\"uuid\":\"" + id + "\""));
+    assertTrue(publishedEvent[0].contains("\"id\":\"" + id + "\""));
     assertTrue(
         publishedEvent[0].contains("\"operation\":\"LidarClosestLambda\""));
     assertTrue(publishedEvent[0].contains("\"result\":"));

@@ -8,24 +8,17 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Temperature conversion API. Legacy GET conversions remain read-only.
- * A04 POST persists when both storage environment variables are configured.
+ * Handles the CSC 5100 temperature conversion REST API, including GET lookups and POST requests that can persist readings and publish events through injected storage and messaging adapters.
+ *
+ * @author Javier Gonzalez-Sanchez
+ * @version 2.0 (2026-10-29)
  */
 public class TemperatureLambda implements RequestHandler<Map<String, Object>, Map<String, Object>> {
-  interface Storage {
-    void save(String id, String json);
-    String get(String id);
-  }
-
-  private final ObjectMapper mapper = new ObjectMapper();
+private final ObjectMapper mapper = new ObjectMapper();
   private final Storage storage;
   private final Messaging messaging;
 
-  interface Messaging {
-    void publish(String json);
-  }
-
-  public TemperatureLambda() {
+public TemperatureLambda() {
     this(System.getenv("A04_DYNAMODB_TABLE"), System.getenv("A04_S3_BUCKET"),
         System.getenv("A04_SNS_TOPIC_ARN"), System.getenv("A04_SQS_QUEUE_URL"));
   }

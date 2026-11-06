@@ -7,7 +7,12 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 
-/** Mirror AWS IoT Core publishing via the public HiveMQ MQTT broker. */
+/**
+ * Publishes A04 event JSON to the public HiveMQ MQTT broker using a short-lived MQTT client and quality of service level 1.
+ *
+ * @author Javier Gonzalez-Sanchez
+ * @version 2.0 (2026-10-29)
+ */
 public class HiveMqEventPublisher {
   public static final String TOPIC = AwsIotEventPublisher.TOPIC;
   public static final String BROKER = "tcp://broker.hivemq.com:1883";

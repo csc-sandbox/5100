@@ -1,6 +1,25 @@
 name: Lambda Lab CI/CD
 
 on:
+  workflow_dispatch:
+    inputs:
+      function:
+        description: "Student Lambda function to redeploy"
+        required: true
+        type: choice
+        options:
+          - csc5100-encrypt
+          - csc5100-gaze-clusters
+          - csc5100-dominant-affect
+          - csc5100-nearest-sample
+          - csc5100-robot-distance
+          - csc5100-robot-reachability
+          - csc5100-lidar-closest
+          - csc5100-lidar-safety
+          - csc5100-data-freshness
+          - csc5100-moving-average
+          - csc5100-coordinate-normalizer
+          - csc5100-event-rate
   pull_request:
     branches: [main]
     paths:
@@ -32,7 +51,7 @@ jobs:
         run: mvn clean package
 
   deploy:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: build-test
     runs-on: ubuntu-latest
     strategy:
@@ -91,7 +110,15 @@ jobs:
         id: changed
         shell: bash
         run: |
-          if git diff --quiet HEAD^ HEAD --             "src/main/java/edu/calpoly/lambdalab/${{ matrix.package }}/"             "src/test/java/edu/calpoly/lambdalab/${{ matrix.package }}/"; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ inputs.function }}" == "${{ matrix.function }}" ]]; then
+              echo "deploy=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+            fi
+          elif git diff --quiet HEAD^ HEAD -- \
+            "src/main/java/edu/calpoly/lambdalab/${{ matrix.package }}/" \
+            "src/test/java/edu/calpoly/lambdalab/${{ matrix.package }}/"; then
             echo "deploy=false" >> "$GITHUB_OUTPUT"
           else
             echo "deploy=true" >> "$GITHUB_OUTPUT"
