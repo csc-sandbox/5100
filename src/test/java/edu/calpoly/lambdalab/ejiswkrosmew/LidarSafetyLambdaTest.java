@@ -25,6 +25,18 @@ public class LidarSafetyLambdaTest {
     }
 
     @Test
+    void warningDistanceInt() {
+        LidarSafetyLambda lambda = new LidarSafetyLambda();
+        Map<String, Object> input = Map.of(
+                "body", "{\"distances\":[2, 1.4, 0.8, 2.1, 0.5], \"threshold\": 0.6}"
+        );
+        Map<String, Object> res = lambda.handleRequest(input, null);
+        assertEquals(200, res.get("statusCode"));
+        assertTrue(res.get("body").toString().contains("\"status\":\"WARNING\""));
+        assertTrue(res.get("body").toString().contains("\"minDist\":0.5"));
+    }
+
+    @Test
     void safeDistance() {
         LidarSafetyLambda lambda = new LidarSafetyLambda();
         Map<String, Object> input = Map.of(

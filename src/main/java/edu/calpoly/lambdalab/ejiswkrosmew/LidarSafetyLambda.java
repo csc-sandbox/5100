@@ -13,7 +13,7 @@ import java.util.*;
  * Heavily based on edu.calpoly.lambdalab.instructor.TemperatureLambda
  *
  * @author James Yaguma
- * @version 1.1 (2026-10-27)
+ * @version 1.2 (2026-11-06)
  */
 public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Map<String, Object>> {
     interface Storage {
@@ -34,7 +34,7 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
      * Default constructor
      * Try to use env variables by default
      */
-    LidarSafetyLambda() {
+    public LidarSafetyLambda() {
         this(
             System.getenv("A04_DYNAMODB_TABLE"),
             System.getenv("A04_S3_BUCKET"),
@@ -51,7 +51,7 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
      * @param topicArn Name of the topic that for SNS
      * @param queueUrl Name of the queue url for SQS
      */
-    LidarSafetyLambda(String table, String bucket, String topicArn, String queueUrl) {
+    public LidarSafetyLambda(String table, String bucket, String topicArn, String queueUrl) {
         this(table != null && !table.isBlank() && bucket != null && !bucket.isBlank()
                 ? new LidarSafetyStorage(table, bucket) : null,
             topicArn != null && !topicArn.isBlank() && queueUrl != null && !queueUrl.isBlank()
@@ -63,7 +63,7 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
      *
      * @param storage Storage to use instead of defaulting to DynamoDB/S3 storage
      */
-    LidarSafetyLambda(Storage storage) {
+    public LidarSafetyLambda(Storage storage) {
         this(storage, null);
     }
 
@@ -73,7 +73,7 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
      * @param storage   Storage to use instead of defaulting to DynamoDB/S3 storage
      * @param messaging Messaging to use instead of SNS and SQS
      */
-    LidarSafetyLambda(Storage storage, Messaging messaging) {
+    public LidarSafetyLambda(Storage storage, Messaging messaging) {
         this.storage = storage;
         this.messaging = messaging;
     }
