@@ -1,0 +1,158 @@
+name: A04 Integration Smoke Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: a04-integration-smoke-test
+  cancel-in-progress: false
+
+jobs:
+  robot-distance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Verify Paul's RobotDistanceLambda
+        shell: bash
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          import subprocess
+          import sys
+          import time
+          import urllib.error
+          import urllib.request
+          import uuid
+
+          API = "https://api.javiergs.phd/5100/robot-distance"
+          REGION = os.environ["AWS_REGION"]
+          CHECKS = []
+
+          def check(name, ok, detail=""):
+              CHECKS.append((name, bool(ok), detail))
+              print(f"{'PASS' if ok else 'FAIL'}: {name}" + (f" — {detail}" if detail else ""), flush=True)
+
+          def aws(*args):
+              p = subprocess.run(["aws", *args, "--region", REGION, "--output", "json"],
+                                 capture_output=True, text=True)
+              if p.returncode:
+                  raise RuntimeError(p.stderr.strip())
+              return json.loads(p.stdout) if p.stdout.strip() else {}
+
+          def request(method, url, payload=None):
+              body = json.dumps(payload).encode() if payload is not None else None
+              req = urllib.request.Request(url, data=body, method=method,
+                                           headers={"Content-Type": "application/json"})
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      return response.status, json.loads(response.read())
+              except urllib.error.HTTPError as e:
+                  return e.code, {"error": e.read().decode(errors="replace")}
+
+          started = datetime.datetime.now(datetime.timezone.utc)
+          response_id = None
+          try:
+              status, result = request("POST", API, {
+                  "x1": 0, "y1": 0, "z1": 0, "x2": 3, "y2": 4, "z2": 0
+              })
+              check("POST HTTP 200", status == 200, f"HTTP {status}")
+              check("Distance equals 5", isinstance(result, dict) and result.get("distance") == 5.0)
+              response_id = result.get("id") if isinstance(result, dict) else None
+              try:
+                  uuid.UUID(str(response_id))
+                  valid_uuid = True
+              except (ValueError, TypeError):
+                  valid_uuid = False
+              check("Response UUID", valid_uuid)
+          except Exception as e:
+              check("POST request", False, str(e))
+
+          if response_id:
+              try:
+                  item = aws("dynamodb", "get-item", "--table-name", "csc5100-results",
+                             "--key", json.dumps({"id": {"S": response_id}})).get("Item")
+                  stored = json.loads(item["resultJson"]["S"]) if item else {}
+                  check("DynamoDB persistence", bool(item) and stored.get("id") == response_id
+                        and stored.get("distance") == 5.0)
+              except Exception as e:
+                  check("DynamoDB persistence", False, str(e))
+
+              try:
+                  objects = aws("s3api", "list-objects-v2", "--bucket", "csc5100-results",
+                                "--prefix", "PaulMotter/DistanceLambda/").get("Contents", [])
+                  matches = [o["Key"] for o in objects if o["Key"].endswith("/" + response_id + ".json")]
+                  if matches:
+                      obj = aws("s3api", "get-object", "--bucket", "csc5100-results",
+                                "--key", matches[0], "/tmp/a04-robot-distance.json")
+                      with open("/tmp/a04-robot-distance.json") as f:
+                          saved = json.load(f)
+                      check("S3 JSON persistence", saved.get("id") == response_id and saved.get("distance") == 5.0,
+                            matches[0])
+                  else:
+                      check("S3 JSON persistence", False, "UUID object not found under expected prefix")
+              except Exception as e:
+                  check("S3 JSON persistence", False, str(e))
+
+              try:
+                  get_status, retrieved = request("GET", API + "?id=" + response_id)
+                  check("GET by UUID", get_status == 200 and retrieved == result, f"HTTP {get_status}")
+              except Exception as e:
+                  check("GET by UUID", False, str(e))
+
+              # Logs are eventual: allow the asynchronous SQS consumer time to run.
+              # A successful processor log is evidence of SQS receipt and broker publish calls;
+              # it does not independently prove SNS publication or subscriber delivery.
+              patterns = {
+                  "SQS event received": "A04 SQS received",
+                  "AWS IoT publish logged": "A04 IoT published",
+                  "HiveMQ publish logged": "A04 HiveMQ published",
+              }
+              found = {key: False for key in patterns}
+              errors = []
+              for attempt in range(8):
+                  try:
+                      events = aws("logs", "filter-log-events",
+                                   "--log-group-name", "/aws/lambda/csc5100-event-processor",
+                                   "--start-time", str(int((started.timestamp() - 10) * 1000)),
+                                   "--filter-pattern", response_id).get("events", [])
+                      lines = [event.get("message", "") for event in events]
+                      for name, marker in patterns.items():
+                          found[name] |= any(marker in line and response_id in line for line in lines)
+                      if all(found.values()):
+                          break
+                  except Exception as e:
+                      errors.append(str(e))
+                      break
+                  time.sleep(5)
+              for name, ok in found.items():
+                  check(name, ok, errors[-1] if errors else ("matching UUID log" if ok else "no matching log"))
+
+          check("SNS publication", False, "NOT TESTED: requires independent SNS evidence")
+          # SNS is informational, not a failing check until an independent verification is implemented.
+          required = [c for c in CHECKS if c[0] != "SNS publication"]
+          passed = sum(ok for _, ok, _ in required)
+          print(f"\nRequired checks: {passed}/{len(required)} passed. SNS: not independently tested.")
+          with open(os.environ.get("GITHUB_STEP_SUMMARY", "/tmp/a04-summary.md"), "a") as f:
+              f.write("## A04 RobotDistance integration smoke test\n\n")
+              f.write(f"Request UUID: \`{response_id or 'none'}\`\n\n")
+              f.write("| Check | Status | Details |\n|---|---|---|\n")
+              for name, ok, detail in CHECKS:
+                  state = "Not tested" if name == "SNS publication" else ("PASS" if ok else "FAIL")
+                  f.write(f"| {name} | {state} | {detail.replace('|', '/').replace(chr(10), ' ')} |\n")
+          if passed != len(required):
+              sys.exit(1)
+          PY
