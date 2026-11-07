@@ -71,8 +71,10 @@ class EncryptMessageLambdaTest {
   void legacyGetReturnsEncryptionWithoutStorageOrMessagingSideEffects() {
     List<String> published = new ArrayList<>();
     int[] storageCalls = {0};
-    EncryptMessageLambda.Storage storage = new EncryptMessageLambda.Storage() {
+    Storage storage = new Storage() {
+      @Override
       public void save(String id, String json) { storageCalls[0]++; }
+      @Override
       public String get(String id) { storageCalls[0]++; return null; }
     };
     EncryptMessageLambda lambda = new EncryptMessageLambda(storage, published::add, published::add);
@@ -115,9 +117,11 @@ class EncryptMessageLambdaTest {
 
   @Test
   void storesOneUuidKeyedRecordForEachSuccessfulOperation() {
-    class FakeStorage implements EncryptMessageLambda.Storage {
+    class FakeStorage implements Storage {
       final Map<String, String> values = new HashMap<>();
+      @Override
       public void save(String id, String json) { values.put(id, json); }
+      @Override
       public String get(String id) { return values.get(id); }
     }
     FakeStorage storage = new FakeStorage();
@@ -134,8 +138,10 @@ class EncryptMessageLambdaTest {
 
   @Test
   void reportsUsefulErrorWhenPersistenceFails() {
-    EncryptMessageLambda lambda = new EncryptMessageLambda(new EncryptMessageLambda.Storage() {
+    EncryptMessageLambda lambda = new EncryptMessageLambda(new Storage() {
+      @Override
       public void save(String id, String json) { throw new IllegalStateException("DynamoDB unavailable"); }
+      @Override
       public String get(String id) { return null; }
     });
     Map<String, Object> response = lambda.handleRequest(Map.of("httpMethod", "POST", "body",
@@ -147,8 +153,10 @@ class EncryptMessageLambdaTest {
   @Test
   void publishesCorrelatedEventToSnsAfterPersistence() {
     List<String> events = new ArrayList<>();
-    EncryptMessageLambda.Storage storage = new EncryptMessageLambda.Storage() {
+    Storage storage = new Storage() {
+      @Override
       public void save(String id, String json) { }
+      @Override
       public String get(String id) { return null; }
     };
     EncryptMessageLambda lambda = new EncryptMessageLambda(storage, events::add);
@@ -167,8 +175,10 @@ class EncryptMessageLambdaTest {
 
   @Test
   void returnsUsefulErrorWhenSnsPublishingFails() {
-    EncryptMessageLambda.Storage storage = new EncryptMessageLambda.Storage() {
+    Storage storage = new Storage() {
+      @Override
       public void save(String id, String json) { }
+      @Override
       public String get(String id) { return null; }
     };
     EncryptMessageLambda lambda = new EncryptMessageLambda(storage, json -> {
@@ -184,8 +194,10 @@ class EncryptMessageLambdaTest {
   void queuesSameCorrelatedRoutingEnvelopeIndependentlyOfSns() {
     List<String> snsEvents = new ArrayList<>();
     List<String> sqsEvents = new ArrayList<>();
-    EncryptMessageLambda.Storage storage = new EncryptMessageLambda.Storage() {
+    Storage storage = new Storage() {
+      @Override
       public void save(String id, String json) { }
+      @Override
       public String get(String id) { return null; }
     };
     EncryptMessageLambda lambda = new EncryptMessageLambda(storage, snsEvents::add, sqsEvents::add);
@@ -207,8 +219,10 @@ class EncryptMessageLambdaTest {
   @Test
   void attemptsSqsWhenIndependentSnsBranchFails() {
     List<String> sqsEvents = new ArrayList<>();
-    EncryptMessageLambda.Storage storage = new EncryptMessageLambda.Storage() {
+    Storage storage = new Storage() {
+      @Override
       public void save(String id, String json) { }
+      @Override
       public String get(String id) { return null; }
     };
     EncryptMessageLambda lambda = new EncryptMessageLambda(storage, json -> {

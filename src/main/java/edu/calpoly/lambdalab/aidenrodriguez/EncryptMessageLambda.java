@@ -4,11 +4,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 
 /**
  * AWS Lambda function that encrypts a message using a Caesar shift cipher.
@@ -25,24 +27,16 @@ public class EncryptMessageLambda implements RequestHandler<Map<String, Object>,
     private final Storage storage;
     private final Messaging snsMessaging;
     private final Messaging sqsMessaging;
-
-    /** Storage seam; production uses DynamoDB and tests may supply a fake. */
-    interface Storage {
-        void save(String id, String json);
-        String get(String id);
-    }
-
-    /** A single, independently configured event-delivery branch. */
-    interface Messaging {
-        void publish(String json);
-    }
+    private final EncryptMessageRetryExecutor storageRetry;
+    private final Consumer<String> structuredLogger;
 
     /**
      * Uses the configured A04 DynamoDB and S3 destinations in Lambda. Local
      * runs without that configuration retain in-memory lookup support.
      */
     public EncryptMessageLambda() {
-        this(defaultStorage(), defaultSnsMessaging(), defaultSqsMessaging());
+        this(defaultStorage(), defaultSnsMessaging(), defaultSqsMessaging(),
+            EncryptMessageRetryExecutor.forAwsStorage(), System.out::println);
     }
 
     EncryptMessageLambda(Storage storage) {
@@ -55,14 +49,23 @@ public class EncryptMessageLambda implements RequestHandler<Map<String, Object>,
     }
 
     EncryptMessageLambda(Storage storage, Messaging snsMessaging, Messaging sqsMessaging) {
+        this(storage, snsMessaging, sqsMessaging, EncryptMessageRetryExecutor.forAwsStorage(),
+                System.out::println);
+    }
+
+    EncryptMessageLambda(Storage storage, Messaging snsMessaging, Messaging sqsMessaging,
+            EncryptMessageRetryExecutor storageRetry, Consumer<String> structuredLogger) {
         this.storage = storage;
         this.snsMessaging = snsMessaging;
         this.sqsMessaging = sqsMessaging;
+        this.storageRetry = storageRetry;
+        this.structuredLogger = structuredLogger;
     }
 
     @Override
     @SuppressWarnings("unchecked")
     public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
+        String requestId = context == null ? null : context.getAwsRequestId();
         try {
             if (event == null) {
                 return invalidRequest();
@@ -96,10 +99,14 @@ public class EncryptMessageLambda implements RequestHandler<Map<String, Object>,
                     "sns", snsMessaging == null ? "not_configured" : "published",
                     "sqs", sqsMessaging == null ? "not_configured" : "queued"));
             String json = mapper.writeValueAsString(output);
+            long storageStart = System.nanoTime();
             try {
-                storage.save(id, json);
+                storageRetry.execute(() -> storage.save(id, json));
+                EncryptMessageObservability.log(structuredLogger, requestId, "S3+DynamoDB",
+                        "RESULT_PERSISTED", "SUCCESS", storageStart, null);
             } catch (RuntimeException e) {
-                log(context, "Unable to persist encryption result", e);
+                EncryptMessageObservability.log(structuredLogger, requestId, "S3+DynamoDB",
+                        "RESULT_PERSISTED", "FAILURE", storageStart, e);
                 return httpResponse(500, "{\"error\":\"Unable to persist result\"}");
             }
             if (snsMessaging != null || sqsMessaging != null) {
@@ -109,18 +116,26 @@ public class EncryptMessageLambda implements RequestHandler<Map<String, Object>,
                         "result", output));
                 RuntimeException deliveryFailure = null;
                 if (snsMessaging != null) {
+                    long publishStart = System.nanoTime();
                     try {
                         snsMessaging.publish(eventJson);
+                        EncryptMessageObservability.log(structuredLogger, requestId, "SNS",
+                                "PUBLISH_EVENT", "SUCCESS", publishStart, null);
                     } catch (RuntimeException e) {
-                        log(context, "Unable to publish SNS event", e);
+                        EncryptMessageObservability.log(structuredLogger, requestId, "SNS",
+                                "PUBLISH_EVENT", "FAILURE", publishStart, e);
                         deliveryFailure = e;
                     }
                 }
                 if (sqsMessaging != null) {
+                    long publishStart = System.nanoTime();
                     try {
                         sqsMessaging.publish(eventJson);
+                        EncryptMessageObservability.log(structuredLogger, requestId, "SQS",
+                                "QUEUE_EVENT", "SUCCESS", publishStart, null);
                     } catch (RuntimeException e) {
-                        log(context, "Unable to queue SQS event", e);
+                        EncryptMessageObservability.log(structuredLogger, requestId, "SQS",
+                                "QUEUE_EVENT", "FAILURE", publishStart, e);
                         if (deliveryFailure == null) deliveryFailure = e;
                         else deliveryFailure.addSuppressed(e);
                     }
@@ -133,7 +148,8 @@ public class EncryptMessageLambda implements RequestHandler<Map<String, Object>,
         } catch (IllegalArgumentException | JsonProcessingException e) {
             return invalidRequest();
         } catch (Exception e) {
-            log(context, "Unable to process encryption request", e);
+            EncryptMessageObservability.log(structuredLogger, requestId, "Lambda",
+                    "PROCESS_REQUEST", "FAILURE", 0, e);
             return httpResponse(500, "{\"error\":\"Operation failed\"}");
         }
     }
@@ -172,7 +188,7 @@ public class EncryptMessageLambda implements RequestHandler<Map<String, Object>,
         if (body == null) {
             throw new IllegalArgumentException("body is required");
         }
-        return mapper.readValue(String.valueOf(body), Map.class);
+        return mapper.readValue(String.valueOf(body), new TypeReference<Map<String, Object>>() { });
     }
 
     private static boolean isUuid(String id) {
@@ -212,12 +228,6 @@ public class EncryptMessageLambda implements RequestHandler<Map<String, Object>,
     private static Messaging defaultSqsMessaging() {
         String queueUrl = System.getenv("A04_SQS_QUEUE_URL");
         return queueUrl == null || queueUrl.isBlank() ? null : new EncryptMessageSqsMessaging(queueUrl);
-    }
-
-    private static void log(Context context, String message, Exception error) {
-        if (context != null) {
-            context.getLogger().log(message + ": " + error.getClass().getSimpleName());
-        }
     }
 
     /**
