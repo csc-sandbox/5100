@@ -35,7 +35,7 @@ public class MovingAverageIntegrationTest {
                 new MqttClient(MovingAverageMqttClient.BROKER, MqttClient.generateClientId(), new MemoryPersistence());
         testClient.connect();
         // subscribe with a listener lambda; push each ack payload into the queue
-        testClient.subscribe(MovingAverageMqttClient.ACK_TOPIC, 1, (topic, msg) -> {
+        testClient.subscribe("csc5100/status/#", 1, (topic, msg) -> {
             var json = mapper.readValue(msg.getPayload(), MovingAverageLambdaEventResponse.class);
             acks.put(json.id(), json);
             latchFor(json.id()).countDown();

@@ -73,33 +73,31 @@ public class MovingAverageLambdaTest {
         var lambda = new MovingAverageLambda(mockStorage, new MockMessaging());
         Map<String, Object> response = lambda.handleRequest(invalidGet1, null);
         assertEquals(200, response.get("statusCode"));
-        assertTrue(((String) response.get("body")).contains("\"movingAverage\":[4.0,6.0,8.0]"));
+        assertEquals(mockStorage.get(id), response.get("body"));
     }
 
 
     @Test
-    void testPostThenGet() {
+    void testPostThenGet() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
-        var lambda = new MovingAverageLambda(new MockStorage(), new MockMessaging());
+        var mockStorage = new MockStorage();
+        var lambda = new MovingAverageLambda(mockStorage, new MockMessaging());
         Map<String, Object> event = new HashMap<>(Map.of("httpMethod",
                 "POST",
                 "body",
                 "{\"samples\": [1, 2, 3, 4, 5]," + "\"window\": " + "5}"));
         Map<String, Object> response = lambda.handleRequest(event, null);
 
-        try {
-            var id = mapper
-                    .readValue(response.get("body").toString(), new TypeReference<Map<String, Object>>() {})
-                    .get("id");
+        String id = (String) mapper
+                .readValue(response.get("body").toString(), new TypeReference<Map<String, Object>>() {})
+                .get("id");
 
-            Map<String, Object> getEvent =
-                    Map.of("httpMethod", "GET", "queryStringParameters", Map.of("id", id.toString()));
-            Map<String, Object> getResponse = lambda.handleRequest(getEvent, null);
-            assertEquals(200, getResponse.get("statusCode"));
-            assertTrue(getResponse.get("body").toString().contains("movingAverage\":[3.0]"));
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
-        }
+        assertEquals(mapper.readTree(mockStorage.get(id)), mapper.readTree((String)response.get("body")));
+
+        Map<String, Object> getEvent =
+                Map.of("httpMethod", "GET", "queryStringParameters", Map.of("id", id.toString()));
+        Map<String, Object> getResponse = lambda.handleRequest(getEvent, null);
+        assertEquals(200, getResponse.get("statusCode"));
     }
 
     @Test
