@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit;
 
 
 public class MovingAverageMqttCallback implements MqttCallback, MovingAverageAckPublisher, AutoCloseable {
+    public static final String OPERATION = "MovingAverageLambda";
     private static final ObjectMapper mapper = new ObjectMapper();
     private  final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final MqttClient client;
@@ -60,7 +61,7 @@ public class MovingAverageMqttCallback implements MqttCallback, MovingAverageAck
             JsonProcessingException, RuntimeException {
 
         var eventResponse = new MovingAverageLambdaEventResponse(UUID.fromString(id),
-                MovingAverageLambda.OPERATION,
+                OPERATION,
                 status,
                 errorMessage);
 
@@ -69,8 +70,8 @@ public class MovingAverageMqttCallback implements MqttCallback, MovingAverageAck
             try {
                 var message = new MqttMessage(jsonStr.getBytes(StandardCharsets.UTF_8));
                 message.setQos(1);
-                client.publish(ackTopic, message);
-                System.out.println("Published Acknowledgment to" + ackTopic);
+                client.publish(ackTopic + id, message);
+                System.out.println("Published Acknowledgment to" + ackTopic + id);
             } catch (MqttException e) {
                 System.err.println("Error While Publishing Acknowledgment");
             }
@@ -85,7 +86,7 @@ public class MovingAverageMqttCallback implements MqttCallback, MovingAverageAck
                     Id: %s
                     Samples: %s
                     Window: %s
-                    Averages  %s
+                    Averages:  %s
                     %n""", json.id(), json.result().samples(), json.result().windowSize(), json.result().averages());
             publishAcknowledgement(json.id().toString(), EventStatus.SUCCESS, null);
         }
