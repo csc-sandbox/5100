@@ -24,7 +24,7 @@ import java.util.Map;
  * @author James Yaguma
  * @version 1.0 (2026-10-27)
  */
-final public class LidarSafetyStorage implements LidarSafetyLambda.Storage {
+final public class LidarSafetyStorage implements Storage {
     private static final String OWNER = "ejiswkrosmew";
 
     private final DynamoDbClient dynamo = DynamoDbClient.builder().region(Region.US_WEST_2).build();
@@ -47,24 +47,36 @@ final public class LidarSafetyStorage implements LidarSafetyLambda.Storage {
     @Override
     public void save(String id, String json) {
         // Try to save to S3
-        PutObjectRequest PutObjReq = PutObjectRequest.builder()
-            .bucket(bucket)
-            .key("ejiswkrosmew/lidar-safety/" + id + ".json")
-            .contentType("application/json")
-            .build();
-        s3.putObject(PutObjReq, RequestBody.fromBytes(json.getBytes(StandardCharsets.UTF_8)));
+        long s3Start = System.nanoTime();
+        try {
+            PutObjectRequest PutObjReq = PutObjectRequest.builder()
+                .bucket(bucket)
+                .key("ejiswkrosmew/lidar-safety/" + id + ".json")
+                .contentType("application/json")
+                .build();
+            s3.putObject(PutObjReq, RequestBody.fromBytes(json.getBytes(StandardCharsets.UTF_8)));
+            LidarSafetyObservability.log(id, null, "S3", "S3_SAVED", "SUCCESS", s3Start);
+        } catch (Exception e) {
+            LidarSafetyObservability.log(id, null, "S3", "S3_SAVED", "FAILURE", s3Start);
+        }
 
         // Try to save to DynamoDB
-        PutItemRequest PutItemReq = PutItemRequest.builder()
-            .tableName(table)
-            .item(Map.of(
-                "id", AttributeValue.fromS(id),
-                "owner", AttributeValue.fromS(OWNER),
-                "feature", AttributeValue.fromS("lidar-safety"),
-                "resultJson", AttributeValue.fromS(json))
-            )
-            .build();
-        dynamo.putItem(PutItemReq);
+        long dynamoStart = System.nanoTime();
+        try {
+            PutItemRequest PutItemReq = PutItemRequest.builder()
+                .tableName(table)
+                .item(Map.of(
+                    "id", AttributeValue.fromS(id),
+                    "owner", AttributeValue.fromS(OWNER),
+                    "feature", AttributeValue.fromS("lidar-safety"),
+                    "resultJson", AttributeValue.fromS(json))
+                )
+                .build();
+            dynamo.putItem(PutItemReq);
+            LidarSafetyObservability.log(id, null, "DynamoDB", "DYNAMODB_SAVED", "SUCCESS", dynamoStart);
+        } catch (Exception e) {
+            LidarSafetyObservability.log(id, null, "DynamoDB", "DYNAMODB_SAVED", "FAILURE", dynamoStart);
+        }
     }
 
     /**

@@ -1,6 +1,5 @@
 package edu.calpoly.lambdalab.ejiswkrosmew;
 
-import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -42,6 +41,94 @@ public class LidarSafetyObservabilityTest {
         assertEquals("SUCCESS", entry.get("status").asText());
         assertEquals(readingId, entry.get("readingId").asText());
         assertEquals("lambda-request-1", entry.get("requestId").asText());
+        assertTrue(entry.get("durationMs").asDouble() >= 0);
+        assertFalse(entry.has("payload"));
+    }
+
+    @Test
+    void validLogNoReadingId() throws JsonProcessingException {
+        PrintStream oldOut = System.out;
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        try {
+            System.setOut(new PrintStream(captured, true, StandardCharsets.UTF_8));
+            LidarSafetyObservability.log(
+                null,
+                "lambda-request-1",
+                "DynamoDB",
+                "DYNAMODB_SAVED",
+                "SUCCESS",
+                System.nanoTime()
+            );
+        } finally {
+            System.setOut(oldOut);
+        }
+        JsonNode entry = mapper.readTree(captured.toString(StandardCharsets.UTF_8).trim());
+        assertEquals("CSC5100", entry.get("course").asText());
+        assertEquals("LidarSafetyLambda", entry.get("component").asText());
+        assertEquals("DynamoDB", entry.get("service").asText());
+        assertEquals("DYNAMODB_SAVED", entry.get("event").asText());
+        assertEquals("SUCCESS", entry.get("status").asText());
+        assertFalse(entry.has("readingId"));
+        assertEquals("lambda-request-1", entry.get("requestId").asText());
+        assertTrue(entry.get("durationMs").asDouble() >= 0);
+        assertFalse(entry.has("payload"));
+    }
+
+    @Test
+    void validLogNoReadingNorRequestId() throws JsonProcessingException {
+        PrintStream oldOut = System.out;
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        try {
+            System.setOut(new PrintStream(captured, true, StandardCharsets.UTF_8));
+            LidarSafetyObservability.log(
+                null,
+                null,
+                "DynamoDB",
+                "DYNAMODB_SAVED",
+                "SUCCESS",
+                System.nanoTime()
+            );
+        } finally {
+            System.setOut(oldOut);
+        }
+        JsonNode entry = mapper.readTree(captured.toString(StandardCharsets.UTF_8).trim());
+        assertEquals("CSC5100", entry.get("course").asText());
+        assertEquals("LidarSafetyLambda", entry.get("component").asText());
+        assertEquals("DynamoDB", entry.get("service").asText());
+        assertEquals("DYNAMODB_SAVED", entry.get("event").asText());
+        assertEquals("SUCCESS", entry.get("status").asText());
+        assertFalse(entry.has("readingId"));
+        assertFalse(entry.has("requestId"));
+        assertTrue(entry.get("durationMs").asDouble() >= 0);
+        assertFalse(entry.has("payload"));
+    }
+
+    @Test
+    void validLogNoRequestId() throws JsonProcessingException {
+        PrintStream oldOut = System.out;
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        String readingId = UUID.randomUUID().toString();
+        try {
+            System.setOut(new PrintStream(captured, true, StandardCharsets.UTF_8));
+            LidarSafetyObservability.log(
+                readingId,
+                null,
+                "DynamoDB",
+                "DYNAMODB_SAVED",
+                "SUCCESS",
+                System.nanoTime()
+            );
+        } finally {
+            System.setOut(oldOut);
+        }
+        JsonNode entry = mapper.readTree(captured.toString(StandardCharsets.UTF_8).trim());
+        assertEquals("CSC5100", entry.get("course").asText());
+        assertEquals("LidarSafetyLambda", entry.get("component").asText());
+        assertEquals("DynamoDB", entry.get("service").asText());
+        assertEquals("DYNAMODB_SAVED", entry.get("event").asText());
+        assertEquals("SUCCESS", entry.get("status").asText());
+        assertEquals(readingId, entry.get("readingId").asText());
+        assertFalse(entry.has("requestId"));
         assertTrue(entry.get("durationMs").asDouble() >= 0);
         assertFalse(entry.has("payload"));
     }

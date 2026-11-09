@@ -16,16 +16,6 @@ import java.util.*;
  * @version 1.2 (2026-11-06)
  */
 public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Map<String, Object>> {
-    interface Storage {
-        void save(String id, String json);
-
-        String get(String id);
-    }
-
-    interface Messaging {
-        void publish(String json);
-    }
-
     private final ObjectMapper mapper = new ObjectMapper();
     private final Storage storage;
     private final Messaging messaging;
@@ -88,6 +78,10 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
     @Override
     @SuppressWarnings("unchecked")
     public Map<String, Object> handleRequest(Map<String, Object> input, Context context) {
+        String requestId = null;
+        if (context != null) {
+            requestId = context.getAwsRequestId();
+        }
         try {
             // Make sure input is actually something
             if (input == null) {
@@ -170,6 +164,7 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
             // Create/Reuse a UUID for the successful query and add it to the response
             String id = body.getOrDefault("id", UUID.randomUUID()).toString();
             response.put("id", id);
+            LidarSafetyObservability.log(id, requestId, "Lambda", "REQUEST_FAILED", "SUCCESS", 0);
 
             // Update storage if possible
             if (storage != null) {
@@ -215,9 +210,12 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
 
             // Return the response as a JSON string
             return httpResponse(200, mapper.writeValueAsString(response));
-        } catch (Exception e) {
-//            System.err.println("Invalid Request Received due to: " + e.getMessage());
+        } catch (IllegalArgumentException e) {
             return errorResponse(400, "Invalid request");
+        } catch (Exception e) {
+            LidarSafetyObservability.log(null, requestId, "Lambda", "REQUEST_FAILED", "FAILURE", 0);
+            if (context != null) context.getLogger().log("Lidar Safety failure: " + e.getClass().getSimpleName());
+            return errorResponse(500, "Operation failed");
         }
     }
 
