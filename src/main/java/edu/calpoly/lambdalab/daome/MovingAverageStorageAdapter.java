@@ -35,7 +35,9 @@ public class MovingAverageStorageAdapter implements MovingAverageLambda.Storage 
             storedMap = Map.of("owner",
                     AttributeValue.fromS(MovingAverageLambda.OWNER),
                     "operation",
-                    AttributeValue.fromS("moving-average"),
+                    AttributeValue.fromS(MovingAverageLambda.OPERATION),
+                    "id",
+                    AttributeValue.fromS(id),
                     "responseJson",
                     AttributeValue.fromS(mapper.writeValueAsString(mapper.readTree(json))));
         } catch (JsonProcessingException e) {
