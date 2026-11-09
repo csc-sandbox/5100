@@ -224,4 +224,51 @@ public class LidarSafetyLambdaTest {
         assertEquals(200, res.get("statusCode"));
         assertTrue(messages.isEmpty());
     }
+
+    @Test
+    void storageSaveFailure() {
+        LidarSafetyLambda lambda = new LidarSafetyLambda(new Storage() {
+            public void save(String id, String json ) { throw new RuntimeException("Simulating Storage Failure"); }
+            public String get(String id) { return null; }
+        });
+
+        Map<String, Object> post = Map.of(
+            "httpMethod", "POST",
+            "body", "{\"distances\": [1.7, 2.5, 0.2, 0.7], \"threshold\": 0.9}"
+        );
+        Map<String, Object> res = lambda.handleRequest(post, null);
+        assertEquals(500, res.get("statusCode"));
+    }
+
+    @Test
+    void storageGetFailure() {
+        LidarSafetyLambda lambda = new LidarSafetyLambda(new Storage() {
+            public void save(String id, String json ) { }
+            public String get(String id) { throw new RuntimeException("Simulating Storage Failure"); }
+        });
+
+        String id = "e465fd07-1bc9-4bc2-ae07-7b0402921cd2";
+        Map<String, Object> post = Map.of(
+            "httpMethod", "GET",
+            "queryStringParameters", Map.of("id", id)
+        );
+        Map<String, Object> res = lambda.handleRequest(post, null);
+        assertEquals(500, res.get("statusCode"));
+    }
+
+    @Test
+    void messageSendFailure() {
+        LidarSafetyLambda lambda = new LidarSafetyLambda(new Storage() {
+            public void save(String id, String json ) { }
+            public String get(String id) { return null; }
+        }, json -> { throw new RuntimeException("Simulating Messaging Failure"); });
+
+        String id = "e465fd07-1bc9-4bc2-ae07-7b0402921cd2";
+        Map<String, Object> req = Map.of(
+            "httpMethod", "POST",
+            "body", "{\"id\":\"" + id + "\", \"distances\": [1.7, 2.5, 0.2, 0.7], \"threshold\": 0.9}"
+        );
+        Map<String, Object> res = lambda.handleRequest(req, null);
+        assertEquals(500, res.get("statusCode"));
+    }
 }

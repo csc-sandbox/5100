@@ -180,22 +180,15 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
             // Create/Reuse a UUID for the successful query and add it to the response
             String id = body.getOrDefault("id", UUID.randomUUID()).toString();
             response.put("id", id);
-            LidarSafetyObservability.log(id, requestId, "Lambda", "REQUEST_FAILED", "SUCCESS", 0);
+            LidarSafetyObservability.log(id, requestId, "Lambda", "REQUEST_RECEIVED", "SUCCESS", 0);
 
             // Update storage if possible
             if (storage != null) {
-                try {
-                    storage.save(id, mapper.writeValueAsString(response));
-                    response.put("storage", Map.of(
-                        "dynamodb", "stored",
-                        "s3", "stored"
-                    ));
-                } catch (Exception e) {
-                    response.put("storage", Map.of(
-                        "dynamodb", "failed",
-                        "s3", "failed"
-                    ));
-                }
+                storage.save(id, mapper.writeValueAsString(response));
+                response.put("storage", Map.of(
+                    "dynamodb", "stored",
+                    "s3", "stored"
+                ));
             } else {
                 response.put("storage", Map.of(
                     "dynamodb", "not_configured",
@@ -205,18 +198,11 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
 
             // Send messages if possible
             if (messaging != null) {
-                try {
-                    messaging.publish(mapper.writeValueAsString(response));
-                    response.put("messaging", Map.of(
-                        "sns", "published",
-                        "sqs", "queued"
-                    ));
-                } catch (Exception e) {
-                    response.put("messaging", Map.of(
-                        "sns", "failed",
-                        "sqs", "failed"
-                    ));
-                }
+                messaging.publish(mapper.writeValueAsString(response));
+                response.put("messaging", Map.of(
+                    "sns", "published",
+                    "sqs", "queued"
+                ));
             } else {
                 response.put("messaging", Map.of(
                     "sns", "not_configured",
