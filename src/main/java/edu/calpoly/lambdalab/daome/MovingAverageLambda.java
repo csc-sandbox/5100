@@ -70,7 +70,14 @@ public class MovingAverageLambda implements RequestHandler<Map<String, Object>, 
         storage.save(id, json);
         message.publish(id, json);
 
-        return new HashMap<>(Map.of("id", id, "movingAverage", storageData.averages()));
+        return new HashMap<>(Map.of("id",
+                id,
+                "samples",
+                samples,
+                "window",
+                windowSize,
+                "movingAverage",
+                storageData.averages()));
     }
 
     private List<Double> movingAverage(List<Integer> numbers, Integer windowSize) {
