@@ -3,6 +3,7 @@ package edu.calpoly.lambdalab.ejiswkrosmew;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.*;
@@ -85,7 +86,7 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
         try {
             // Make sure input is actually something
             if (input == null) {
-                return errorResponse(400, "Invalid Request");
+                throw new IllegalArgumentException();
             }
 
             // Try to grab query parameters if they exist
@@ -127,31 +128,46 @@ public class LidarSafetyLambda implements RequestHandler<Map<String, Object>, Ma
             // Use either query or post body depending on legacy get
             Map<String, Object> body;
             if (!legacyGet) {
-                body = mapper.readValue(input.get("body").toString(), Map.class);
+                try {
+                    body = mapper.readValue(input.get("body").toString(), Map.class);
+                } catch (JsonProcessingException e) {
+                    throw new IllegalArgumentException();
+                }
             } else {
                 body = new HashMap<>(query);
 
-                // Need to manually parse threshold since it's a string
-                body.put("threshold", Double.parseDouble(body.get("threshold").toString()));
+                try {
+                    // Need to manually parse threshold since it's a string
+                    body.put("threshold", Double.parseDouble(body.get("threshold").toString()));
 
-                // Have to manually parse the distances since it's a string not a list
-                String distString = body.get("distances").toString();
-                distString = distString.substring(1, distString.length() - 1);
-                List<Double> parsedDists = new ArrayList<>();
-                for (String dist : distString.split(",")) {
-                    parsedDists.add(Double.parseDouble(dist));
+                    // Have to manually parse the distances since it's a string not a list
+                    String distString = body.get("distances").toString();
+                    distString = distString.substring(1, distString.length() - 1);
+                    List<Double> parsedDists = new ArrayList<>();
+                    for (String dist : distString.split(",")) {
+                        parsedDists.add(Double.parseDouble(dist));
+                    }
+
+                    body.put("distances", parsedDists);
+                } catch (NumberFormatException | NullPointerException e) {
+                    // If parse failed, it's because the input is wrong
+                    throw new IllegalArgumentException();
                 }
-
-                body.put("distances", parsedDists);
             }
 
             // Convert body to distances and thresholds
             List<Double> distances = new ArrayList<>();
-            for (Object dist : (List<Object>) body.get("distances")) {
-                distances.add(((Number) dist).doubleValue());
-            }
+            double threshold;
+            try {
+                for (Object dist : (List<Object>) body.get("distances")) {
+                    distances.add(((Number) dist).doubleValue());
+                }
 
-            double threshold = (Double) body.get("threshold");
+                threshold = (Double) body.get("threshold");
+            } catch (ClassCastException | NullPointerException e) {
+                // if one of these went off, the input was in the wrong format or didn't exist
+                throw new IllegalArgumentException();
+            }
 
             // Get the response result as a Map
             Map<String, Object> response = new HashMap<>(safetyCheck(distances, threshold));

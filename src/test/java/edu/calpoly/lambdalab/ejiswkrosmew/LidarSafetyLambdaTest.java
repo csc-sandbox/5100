@@ -130,7 +130,7 @@ public class LidarSafetyLambdaTest {
 
     @Test
     void postPersistsAndGetRetrievesSameId() {
-        class FakeStorage implements LidarSafetyLambda.Storage {
+        class FakeStorage implements Storage {
             final Map<String, String> values = new HashMap<>();
             public void save(String id, String json) { values.put(id, json); }
             public String get(String id) { return values.get(id); }
@@ -162,7 +162,7 @@ public class LidarSafetyLambdaTest {
 
     @Test
     void rejectsInvalidId() {
-        LidarSafetyLambda lambda = new LidarSafetyLambda(new LidarSafetyLambda.Storage() {
+        LidarSafetyLambda lambda = new LidarSafetyLambda(new Storage() {
             public void save(String id, String json ) { }
             public String get(String id) { return null; }
         });
@@ -175,7 +175,7 @@ public class LidarSafetyLambdaTest {
 
     @Test
     void rejectMissingRecord() {
-        LidarSafetyLambda lambda = new LidarSafetyLambda(new LidarSafetyLambda.Storage() {
+        LidarSafetyLambda lambda = new LidarSafetyLambda(new Storage() {
             public void save(String id, String json ) { }
             public String get(String id) { return null; }
         });
@@ -190,7 +190,7 @@ public class LidarSafetyLambdaTest {
     @Test
     void postSendsPayloadToMessagingChannels() {
         List<String> messages = new ArrayList<>();
-        LidarSafetyLambda lambda = new LidarSafetyLambda(new LidarSafetyLambda.Storage() {
+        LidarSafetyLambda lambda = new LidarSafetyLambda(new Storage() {
             public void save(String id, String json ) { }
             public String get(String id) { return null; }
         }, messages::add);
