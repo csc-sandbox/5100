@@ -53,12 +53,7 @@ public class DataFreshnessReliabilityTest {
             }
         };
 
-        Messaging fakeMessaging = new Messaging() {
-            @Override
-            public void publish(String json) {
-                messagePublished[0] = true;
-            }
-        };
+        Messaging fakeMessaging = json -> messagePublished[0] = true;
 
         DataFreshnessLambda lambda = new DataFreshnessLambda(failedStorage, fakeMessaging);
 
