@@ -1,5 +1,6 @@
 package edu.calpoly.lambdalab.aidenrodriguez;
 
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -9,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
+import com.amazonaws.services.lambda.runtime.Context;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -119,6 +121,41 @@ class EncryptMessageReliabilityTest {
         assertEquals(500, response.get("statusCode"));
         assertEquals(3, attempts[0]);
         assertTrue(response.get("body").toString().contains("Unable to persist result"));
+    }
+
+    @Test
+    void nonRetryableStorageFailureStopsImmediatelyAndLogsRequestIdWithoutSensitiveData() {
+        int[] attempts = {0};
+        List<String> output = new ArrayList<>();
+        Storage storage = new Storage() {
+            @Override
+            public void save(String id, String json) {
+                attempts[0]++;
+                throw new IllegalArgumentException("password=do-not-log TOP-SECRET");
+            }
+
+            @Override
+            public String get(String id) {
+                return null;
+            }
+        };
+        Context context = (Context) Proxy.newProxyInstance(Context.class.getClassLoader(),
+                new Class<?>[] {Context.class}, (proxy, method, args) ->
+                        "getAwsRequestId".equals(method.getName()) ? "request-456" : null);
+        EncryptMessageLambda lambda = new EncryptMessageLambda(storage, null, null,
+                retryTransientOnly(), output::add);
+
+        Map<String, Object> response = lambda.handleRequest(POST, context);
+
+        assertEquals(500, response.get("statusCode"));
+        assertEquals(1, attempts[0]);
+        String logs = String.join("\n", output);
+        assertFalse(logs.contains("TOP-SECRET"));
+        assertFalse(logs.contains("do-not-log"));
+        JsonNode failure = loggedEvent(output, "S3+DynamoDB", "RESULT_PERSISTED");
+        assertEquals("FAILURE", failure.path("status").asText());
+        assertEquals("request-456", failure.path("requestId").asText());
+        assertEquals("IllegalArgumentException", failure.path("errorType").asText());
     }
 
     private static EncryptMessageRetryExecutor noRetryExecutor() {
