@@ -11,7 +11,7 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
  * @author Jess A
  * @version October 25, 2026
  */
-final class NearestSampleMessaging implements NearestSampleLambda.Messaging {
+final class NearestSampleMessaging implements Messaging {
 
     private final SnsClient sns;
     private final SqsClient sqs;

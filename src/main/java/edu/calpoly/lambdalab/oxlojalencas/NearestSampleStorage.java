@@ -18,7 +18,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
  * @author Jess A
  * @version October 25, 2026
  */
-final class NearestSampleStorage implements NearestSampleLambda.Storage {
+final class NearestSampleStorage implements Storage {
 
     private static final String OWNER = "oxlojalencas";
     private static final String FEATURE = "nearest-sample";

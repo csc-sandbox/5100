@@ -19,18 +19,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class NearestSampleLambda
         implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
-    /** saves and loads result json by id. */
-    interface Storage {
-        void save(String id, String json);
-
-        String get(String id);
-    }
-
-    /** publishes one event json string. */
-    interface Messaging {
-        void publish(String json);
-    }
-
     private final ObjectMapper mapper = new ObjectMapper();
     private final Storage storage;
     private final Messaging messaging;

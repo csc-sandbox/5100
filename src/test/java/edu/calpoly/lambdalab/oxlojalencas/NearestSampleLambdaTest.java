@@ -264,7 +264,7 @@ class NearestSampleLambdaTest {
     }
 
     /** in-memory storage that can be made to fail. */
-    private static class FakeStorage implements NearestSampleLambda.Storage {
+    private static class FakeStorage implements Storage {
         private final Map<String, String> results = new HashMap<>();
         private boolean fails;
 
@@ -286,7 +286,7 @@ class NearestSampleLambdaTest {
     }
 
     /** records published events and can be made to fail. */
-    private static class FakeMessaging implements NearestSampleLambda.Messaging {
+    private static class FakeMessaging implements Messaging {
         private final List<String> events = new ArrayList<>();
         private boolean fails;
 
