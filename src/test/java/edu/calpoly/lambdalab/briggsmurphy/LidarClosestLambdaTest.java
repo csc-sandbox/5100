@@ -1,10 +1,11 @@
-
 package edu.calpoly.lambdalab.briggsmurphy;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -12,12 +13,14 @@ import org.junit.jupiter.api.Test;
 
 class LidarClosestLambdaTest {
 
-  private static class FakeStorage implements LidarClosestLambda.Storage {
+  private static class FakeStorage implements Storage {
     final Map<String, String> values = new HashMap<>();
     final Map<String, String> s3Values = new HashMap<>();
+    final List<String> operations = new ArrayList<>();
 
     @Override
     public void save(String id, String json) {
+      operations.add("DynamoDB");
       values.put(id, json);
     }
 
@@ -28,6 +31,7 @@ class LidarClosestLambdaTest {
 
     @Override
     public void saveToS3(String id, String json) {
+      operations.add("S3");
       s3Values.put(id, json);
     }
   }
@@ -114,7 +118,7 @@ class LidarClosestLambdaTest {
     String savedJson =
         "{\"id\":\"" + id + "\",\"distance\":0.5,\"index\":1}";
 
-    LidarClosestLambda.Storage storage = new LidarClosestLambda.Storage() {
+    Storage storage = new Storage() {
       @Override
       public void save(String key, String json) {
       }
@@ -143,7 +147,7 @@ class LidarClosestLambdaTest {
 
   @Test
   void rejectsInvalidGetId() {
-    LidarClosestLambda.Storage storage = new LidarClosestLambda.Storage() {
+    Storage storage = new Storage() {
       @Override
       public void save(String id, String json) {
       }
@@ -171,7 +175,7 @@ class LidarClosestLambdaTest {
 
   @Test
   void getReturns404WhenResultIsMissing() {
-    LidarClosestLambda.Storage storage = new LidarClosestLambda.Storage() {
+    Storage storage = new Storage() {
       @Override
       public void save(String id, String json) {
       }
@@ -227,11 +231,15 @@ class LidarClosestLambdaTest {
   @Test
   void returns500WhenSnsPublishingFails() {
     FakeStorage storage = new FakeStorage();
+    List<String> operations = new ArrayList<>();
 
     LidarClosestLambda lambda = new LidarClosestLambda(
-        storage, json -> {
+        storage,
+        json -> {
+          operations.add("SNS");
           throw new RuntimeException("SNS unavailable");
-        });
+        },
+        json -> operations.add("SQS"));
 
     Map<String, Object> event = new HashMap<>();
     event.put("httpMethod", "POST");
@@ -243,6 +251,12 @@ class LidarClosestLambdaTest {
     assertEquals(
         "{\"error\":\"SNS publishing failed\"}",
         response.get("body"));
+
+    assertEquals(
+        List.of("DynamoDB", "S3"),
+        storage.operations);
+
+    assertEquals(List.of("SNS"), operations);
   }
 
   @Test
@@ -280,13 +294,13 @@ class LidarClosestLambdaTest {
   @Test
   void returns500WhenSqsPublishingFails() {
     FakeStorage storage = new FakeStorage();
+    List<String> operations = new ArrayList<>();
 
     LidarClosestLambda lambda = new LidarClosestLambda(
         storage,
+        json -> operations.add("SNS"),
         json -> {
-          // No-op SNS publisher for this SQS test.
-        },
-        json -> {
+          operations.add("SQS");
           throw new RuntimeException("SQS unavailable");
         });
 
@@ -300,5 +314,11 @@ class LidarClosestLambdaTest {
     assertEquals(
         "{\"error\":\"SQS publishing failed\"}",
         response.get("body"));
+
+    assertEquals(
+        List.of("DynamoDB", "S3"),
+        storage.operations);
+
+    assertEquals(List.of("SNS", "SQS"), operations);
   }
 }
