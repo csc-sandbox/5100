@@ -11,7 +11,7 @@ public class DataFreshnessReliabilityTest {
     private static final Map<String, Object> POST = Map.of("httpMethod", "POST", "body",
             "{\"current\":100,\"sample\":95,\"threshold\":10}");
     @Test
-    void injectedStorageFailureReturnsErrorAfterStorageAttempt() {
+    void injectedMessageFailureReturnsErrorAfterStorageAttempt() {
         final boolean[] saveAttempted = {false};
         Storage storage = new Storage() {
             @Override
@@ -35,5 +35,37 @@ public class DataFreshnessReliabilityTest {
 
         assertEquals(500, response.get("statusCode"));
         assertTrue(saveAttempted[0]);  // Indicates that the storage attempt went through.
+    }
+
+    @Test
+    void injectedStorageFailureReturnsErrorAfterMessageAttempt() {
+        final boolean[] messagePublished = {false};
+        Storage failedStorage = new Storage() {
+
+            @Override
+            public void save(String id, String json) {
+                throw new RuntimeException("Simulated invalid id");
+            }
+
+            @Override
+            public String get(String id) {
+                return "";
+            }
+        };
+
+        Messaging fakeMessaging = new Messaging() {
+            @Override
+            public void publish(String json) {
+                messagePublished[0] = true;
+            }
+        };
+
+        DataFreshnessLambda lambda = new DataFreshnessLambda(failedStorage, fakeMessaging);
+
+        Map<String, Object> response = lambda.handleRequest(POST, null);
+
+        assertEquals(500, response.get("statusCode"));
+        assertTrue(messagePublished[0]);  // Indicates that the messaging attempt went through.
+
     }
 }

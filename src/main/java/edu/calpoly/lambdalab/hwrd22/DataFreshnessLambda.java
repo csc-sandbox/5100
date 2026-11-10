@@ -112,6 +112,8 @@ public class DataFreshnessLambda implements RequestHandler<Map<String, Object>, 
     private Map<String, Object> handlePost(Map<String, Object> event, String requestId) throws Exception {
         Map<String, Object> input = requestBody(event);
 
+        boolean fullSuccess = true;
+
         long current = Long.parseLong(input.get("current").toString());
         long sample = Long.parseLong(input.get("sample").toString());
         long threshold = Long.parseLong(input.get("threshold").toString());
@@ -125,19 +127,30 @@ public class DataFreshnessLambda implements RequestHandler<Map<String, Object>, 
         response.put("result", output);
 
         if (storage != null) {
-            storage.save(id, mapper.writeValueAsString(response));
-            response.put("storage", Map.of("dynamodb", "stored", "s3", "stored"));
+            try {
+                storage.save(id, mapper.writeValueAsString(response));
+                response.put("storage", Map.of("dynamodb", "stored", "s3", "stored"));
+            } catch (Exception e) {
+                fullSuccess = false;
+                response.put("storage", Map.of("dynamodb", "failed", "s3", "failed"));
+            }
+
         } else {
             response.put("storage", Map.of("dynamodb", "not_configured", "s3", "not_configured"));
         }
         if (messaging != null) {
-            messaging.publish(mapper.writeValueAsString(response));
-            response.put("messaging", Map.of("sns", "published", "sqs", "queued"));
+            try {
+                messaging.publish(mapper.writeValueAsString(response));
+                response.put("messaging", Map.of("sns", "published", "sqs", "queued"));
+            } catch (Exception e) {
+                fullSuccess = false;
+                response.put("messaging", Map.of("sns", "failed", "sqs", "failed"));
+            }
         } else {
             response.put("messaging", Map.of("sns", "not_configured", "sqs", "not_configured"));
         }
 
-        return httpResponse(200, mapper.writeValueAsString(response));
+        return httpResponse(fullSuccess ? 200 : 500, mapper.writeValueAsString(response));
     }
 
     private Map<String, Object> handleLookup(String id) {
