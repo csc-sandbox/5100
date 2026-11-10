@@ -1,6 +1,10 @@
 package edu.calpoly.lambdalab.hwrd22;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.core.exception.SdkServiceException;
+import software.amazon.awssdk.core.retry.RetryPolicy;
 import software.amazon.awssdk.services.sns.SnsClient;
 import software.amazon.awssdk.services.sns.model.PublishRequest;
 import software.amazon.awssdk.services.sqs.SqsClient;
@@ -9,7 +13,7 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 /**
  * Publishes/Sends Data Freshness as JSON via SNS and SQS.
  *
- * @author hwrd22
+ * @author Howard Jiang (hwrd22)
  * @version 1.1 (November 9, 2026)
  */
 final class DataFreshnessMessaging implements Messaging {
@@ -19,7 +23,9 @@ final class DataFreshnessMessaging implements Messaging {
     private final String queueUrl;
 
     DataFreshnessMessaging(String topicArn, String queueUrl) {
-        this(SnsClient.create(), SqsClient.create(), topicArn, queueUrl);
+        this(SnsClient.create(), SqsClient.builder()
+                .overrideConfiguration(ClientOverrideConfiguration.builder()
+                        .retryPolicy(RetryPolicy.none()).build()).build(), topicArn, queueUrl);
     }
 
     DataFreshnessMessaging(SnsClient sns, SqsClient sqs, String topicArn, String queueUrl) {

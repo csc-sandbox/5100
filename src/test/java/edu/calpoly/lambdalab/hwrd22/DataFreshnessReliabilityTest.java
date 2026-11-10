@@ -34,6 +34,6 @@ public class DataFreshnessReliabilityTest {
         Map<String, Object> response = lambda.handleRequest(POST, null);
 
         assertEquals(500, response.get("statusCode"));
-        assertTrue(saveAttempted[0]);  // Indicates that the storage attempt went through
+        assertTrue(saveAttempted[0]);  // Indicates that the storage attempt went through.
     }
 }

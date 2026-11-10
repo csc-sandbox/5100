@@ -5,6 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * Creates single-line, organized JSON telemetry/logs for AWS operations, particularly the CloudWatch logs.
+ *
+ * @author Howard Jiang (hwrd22)
+ * @version 1.0 (November 9, 2026)
+ */
 public class DataFreshnessObservability {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 

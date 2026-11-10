@@ -3,7 +3,7 @@ package edu.calpoly.lambdalab.hwrd22;
 /**
  * Defines operations for persisting and retrieving JSON records by identifier for DataFreshnessLambda.
  *
- * @author hwrd22
+ * @author Howard Jiang (hwrd22)
  * @version 1.0 (November 9, 2026)
  */
 public interface Storage {
