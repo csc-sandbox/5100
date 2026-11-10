@@ -46,21 +46,24 @@ final class NearestSampleStorage implements Storage {
     @Override
     public void save(String id, String json) {
         // s3 goes first, so a failed write never leaves a dynamodb item behind
-        s3.putObject(PutObjectRequest.builder()
-                .bucket(bucket)
-                .key(OWNER + "/" + FEATURE + "/" + id + ".json")
-                .contentType("application/json")
-                .build(),
-                RequestBody.fromBytes(json.getBytes(StandardCharsets.UTF_8)));
+        NearestSampleObservability.timed(id, "S3", "S3_SAVED", () ->
+                s3.putObject(PutObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(OWNER + "/" + FEATURE + "/" + id + ".json")
+                        .contentType("application/json")
+                        .build(),
+                        RequestBody.fromBytes(
+                                json.getBytes(StandardCharsets.UTF_8))));
 
-        dynamo.putItem(PutItemRequest.builder()
-                .tableName(table)
-                .item(Map.of(
-                        "id", AttributeValue.fromS(id),
-                        "owner", AttributeValue.fromS(OWNER),
-                        "feature", AttributeValue.fromS(FEATURE),
-                        "resultJson", AttributeValue.fromS(json)))
-                .build());
+        NearestSampleObservability.timed(id, "DynamoDB", "DYNAMODB_SAVED", () ->
+                dynamo.putItem(PutItemRequest.builder()
+                        .tableName(table)
+                        .item(Map.of(
+                                "id", AttributeValue.fromS(id),
+                                "owner", AttributeValue.fromS(OWNER),
+                                "feature", AttributeValue.fromS(FEATURE),
+                                "resultJson", AttributeValue.fromS(json)))
+                        .build()));
     }
 
     @Override

@@ -69,10 +69,12 @@ public class NearestSampleLambda
     public Map<String, Object> handleRequest(
             Map<String, Object> event,
             Context context) {
+        String requestId = context == null ? null : context.getAwsRequestId();
+
         if ("GET".equalsIgnoreCase(readMethod(event))) {
-            return getResult(event, context);
+            return getResult(event, requestId);
         }
-        return postResult(event, context);
+        return postResult(event, requestId);
     }
 
     // http api v2 events keep the method in requestContext, not httpMethod
@@ -92,7 +94,7 @@ public class NearestSampleLambda
 
     private Map<String, Object> postResult(
             Map<String, Object> event,
-            Context context) {
+            String requestId) {
         String id;
         String json;
         String eventJson;
@@ -118,12 +120,15 @@ public class NearestSampleLambda
             return errorResponse(400, "Invalid request");
         }
 
+        NearestSampleObservability.log(
+                id, requestId, "Lambda", "REQUEST_RECEIVED", "SUCCESS");
+
         try {
             if (storage != null) {
                 storage.save(id, json);
             }
         } catch (Exception exception) {
-            logError(context, exception);
+            logFailure(id, requestId, exception);
             return errorResponse(500, "Could not save result");
         }
 
@@ -132,7 +137,7 @@ public class NearestSampleLambda
                 messaging.publish(eventJson);
             }
         } catch (Exception exception) {
-            logError(context, exception);
+            logFailure(id, requestId, exception);
             return errorResponse(500, "Could not publish event");
         }
 
@@ -150,7 +155,7 @@ public class NearestSampleLambda
 
     private Map<String, Object> getResult(
             Map<String, Object> event,
-            Context context) {
+            String requestId) {
         Map<?, ?> query = event.get("queryStringParameters") instanceof Map<?, ?> map
                 ? map
                 : Map.of();
@@ -170,7 +175,7 @@ public class NearestSampleLambda
             }
             return response(200, storedResult);
         } catch (Exception exception) {
-            logError(context, exception);
+            logFailure(id, requestId, exception);
             return errorResponse(500, "Could not load result");
         }
     }
@@ -271,10 +276,9 @@ public class NearestSampleLambda
         }
     }
 
-    private void logError(Context context, Exception exception) {
-        if (context != null) {
-            context.getLogger().log(exception.toString());
-        }
+    private void logFailure(String id, String requestId, Exception exception) {
+        NearestSampleObservability.failure(
+                id, requestId, "Lambda", "REQUEST_FAILED", exception);
     }
 
     /** One timestamped sensor sample. */
