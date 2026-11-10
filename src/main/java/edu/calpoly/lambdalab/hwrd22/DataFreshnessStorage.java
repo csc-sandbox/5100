@@ -16,7 +16,7 @@ import java.util.Map;
  * Saves Data Freshness results in DynamoDB table and S3 bucket
  *
  * @author hwrd22
- * @version 1.0 (October 27, 2026)
+ * @version 1.1 (November 9, 2026)
  */
 final class DataFreshnessStorage implements Storage {
     static final String OWNER = "hwrd22";

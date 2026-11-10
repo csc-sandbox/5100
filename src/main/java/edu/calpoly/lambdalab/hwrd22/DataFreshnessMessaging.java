@@ -10,7 +10,7 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
  * Publishes/Sends Data Freshness as JSON via SNS and SQS.
  *
  * @author hwrd22
- * @version 1.0 (October 27, 2026)
+ * @version 1.1 (November 9, 2026)
  */
 final class DataFreshnessMessaging implements Messaging {
     private final SnsClient sns;

@@ -16,7 +16,7 @@ import java.util.UUID;
  * is still fresh according to a user-provided threshold.
  *
  * @author Howard Jiang (hwrd22)
- * @version 1.1 (October 27, 2026)
+ * @version 1.2 (November 9, 2026)
  */
 public class DataFreshnessLambda implements RequestHandler<Map<String, Object>, Map<String, Object>> {
     private final ObjectMapper mapper = new ObjectMapper();
@@ -124,16 +124,20 @@ public class DataFreshnessLambda implements RequestHandler<Map<String, Object>, 
         response.put("operation", OPERATION);
         response.put("result", output);
 
-        String json = mapper.writeValueAsString(response);
-
         if (storage != null) {
-            storage.save(id, json);
+            storage.save(id, mapper.writeValueAsString(response));
+            response.put("storage", Map.of("dynamodb", "stored", "s3", "stored"));
+        } else {
+            response.put("storage", Map.of("dynamodb", "not_configured", "s3", "not_configured"));
         }
         if (messaging != null) {
-            messaging.publish(json);
+            messaging.publish(mapper.writeValueAsString(response));
+            response.put("messaging", Map.of("sns", "published", "sqs", "queued"));
+        } else {
+            response.put("messaging", Map.of("sns", "not_configured", "sqs", "not_configured"));
         }
 
-        return httpResponse(200, json);
+        return httpResponse(200, mapper.writeValueAsString(response));
     }
 
     private Map<String, Object> handleLookup(String id) {
