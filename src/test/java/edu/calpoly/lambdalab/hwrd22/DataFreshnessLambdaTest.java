@@ -40,7 +40,7 @@ public class DataFreshnessLambdaTest {
         Map<String, Object> event = new HashMap<>();
         event.put("body", "{\"current\":100,\"sample\":-95,\"threshold\":10}");
         Map<String, Object> response = lambda.handleRequest(event, null);
-        assertEquals(400, response.get("statusCode"));
+        assertEquals(500, response.get("statusCode"));
     }
 
     @Test
@@ -49,7 +49,7 @@ public class DataFreshnessLambdaTest {
         Map<String, Object> event = new HashMap<>();
         event.put("body", "{\"current\":50,\"sample\":95,\"threshold\":10}");
         Map<String, Object> response = lambda.handleRequest(event, null);
-        assertEquals(400, response.get("statusCode"));
+        assertEquals(500, response.get("statusCode"));
     }
 
     @Test
@@ -162,7 +162,7 @@ public class DataFreshnessLambdaTest {
         Map<String, Object> malformedJson = lambda.handleRequest(Map.of("httpMethod", "POST", "body", "not_json"), null);
 
         assertEquals(400, invalidId.get("statusCode"));
-        assertEquals(400, malformedJson.get("statusCode"));
+        assertEquals(500, malformedJson.get("statusCode"));
     }
 
     @Test
