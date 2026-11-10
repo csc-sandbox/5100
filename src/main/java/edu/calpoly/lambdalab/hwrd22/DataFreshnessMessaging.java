@@ -1,5 +1,6 @@
 package edu.calpoly.lambdalab.hwrd22;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.services.sns.SnsClient;
 import software.amazon.awssdk.services.sns.model.PublishRequest;
 import software.amazon.awssdk.services.sqs.SqsClient;
@@ -11,7 +12,7 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
  * @author hwrd22
  * @version 1.0 (October 27, 2026)
  */
-final class DataFreshnessMessaging implements DataFreshnessLambda.Messaging {
+final class DataFreshnessMessaging implements Messaging {
     private final SnsClient sns;
     private final SqsClient sqs;
     private final String topicArn;
@@ -30,27 +31,29 @@ final class DataFreshnessMessaging implements DataFreshnessLambda.Messaging {
 
     @Override
     public void publish(String json) {
-        RuntimeException failure = null;
+        String id = null;
+        try { id = new ObjectMapper().readTree(json).path("id").asText(null); } catch (Exception ignored) { }
+
+        long snsStart = System.nanoTime();
         if (isConfigured(topicArn)) {
             try {
                 sns.publish(PublishRequest.builder().topicArn(topicArn).message(json).build());
+                DataFreshnessObservability.log(id, null, "SNS", "SNS_PUBLISHED", "SUCCESS", snsStart);
             } catch (RuntimeException exception) {
-                failure = exception;
+                DataFreshnessObservability.log(id, null, "SNS", "SNS_PUBLISHED", "FAILURE", snsStart);
+                throw exception;
             }
         }
+
+        long sqsStart = System.nanoTime();
         if (isConfigured(queueUrl)) {
             try {
                 sqs.sendMessage(SendMessageRequest.builder().queueUrl(queueUrl).messageBody(json).build());
+                DataFreshnessObservability.log(id, null, "SQS", "SQS_SENT", "SUCCESS", sqsStart);
             } catch (RuntimeException exception) {
-                if (failure == null) {
-                    failure = exception;
-                } else {
-                    failure.addSuppressed(exception);
-                }
+                DataFreshnessObservability.log(id, null, "SQS", "SQS_SENT", "FAILURE", sqsStart);
+                throw exception;
             }
-        }
-        if (failure != null) {
-            throw failure;
         }
     }
 

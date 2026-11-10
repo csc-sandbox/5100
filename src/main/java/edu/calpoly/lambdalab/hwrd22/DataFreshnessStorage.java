@@ -18,7 +18,7 @@ import java.util.Map;
  * @author hwrd22
  * @version 1.0 (October 27, 2026)
  */
-final class DataFreshnessStorage implements DataFreshnessLambda.Storage {
+final class DataFreshnessStorage implements Storage {
     static final String OWNER = "hwrd22";
     static final String FEATURE = "data-freshness";
 
@@ -40,20 +40,35 @@ final class DataFreshnessStorage implements DataFreshnessLambda.Storage {
 
     @Override
     public void save(String id, String json) {
-        s3.putObject(PutObjectRequest.builder()
-                .bucket(bucket)
-                .key(OWNER + "/" + FEATURE + "/" + id + ".json")
-                .contentType("application/json")
-                .build(), RequestBody.fromBytes(json.getBytes(StandardCharsets.UTF_8)));
+        long s3Start = System.nanoTime();
+        try {
+            s3.putObject(PutObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(OWNER + "/" + FEATURE + "/" + id + ".json")
+                    .contentType("application/json")
+                    .build(), RequestBody.fromBytes(json.getBytes(StandardCharsets.UTF_8)));
+            DataFreshnessObservability.log(id, null, "S3", "S3_SAVED", "SUCCESS", s3Start);
+        } catch (RuntimeException e) {
+            DataFreshnessObservability.log(id, null, "S3", "S3_SAVED", "FAILURE", s3Start);
+            throw e;
+        }
 
-        dynamoDb.putItem(PutItemRequest.builder()
-                .tableName(table)
-                .item(Map.of(
-                        "id", AttributeValue.fromS(id),
-                        "owner", AttributeValue.fromS(OWNER),
-                        "feature", AttributeValue.fromS(FEATURE),
-                        "resultJson", AttributeValue.fromS(json)
-                )).build());
+        long dynamoStart = System.nanoTime();
+        try {
+            dynamoDb.putItem(PutItemRequest.builder()
+                    .tableName(table)
+                    .item(Map.of(
+                            "id", AttributeValue.fromS(id),
+                            "owner", AttributeValue.fromS(OWNER),
+                            "feature", AttributeValue.fromS(FEATURE),
+                            "resultJson", AttributeValue.fromS(json)
+                    )).build());
+            DataFreshnessObservability.log(id, null, "DYNAMODB", "DYNAMODB_SAVED", "SUCCESS", dynamoStart);
+        } catch (RuntimeException e) {
+            DataFreshnessObservability.log(id, null, "DYNAMODB", "DYNAMODB_SAVED", "FAILURE", dynamoStart);
+            throw e;
+        }
+
     }
 
     @Override

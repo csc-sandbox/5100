@@ -69,7 +69,7 @@ public class DataFreshnessLambdaTest {
 
     @Test
     void postUsesOneGeneratedUUIDForStorageAndMessaging() throws Exception {
-        class FakeStorage implements DataFreshnessLambda.Storage {
+        class FakeStorage implements Storage {
             String id;
             String json;
 
@@ -113,7 +113,7 @@ public class DataFreshnessLambdaTest {
     void getByUuidReturnsPersistedJsonAndMissingReturns404() {
         String id ="d2de736e-7c87-4810-b7b6-ccf04e618183";
         String json = "{\"id\":\"" + id + "\",\"result\":{}}";
-        DataFreshnessLambda lambda = new DataFreshnessLambda(new DataFreshnessLambda.Storage() {
+        DataFreshnessLambda lambda = new DataFreshnessLambda(new Storage() {
             @Override
             public void save(String id, String json) {}
 
@@ -148,7 +148,7 @@ public class DataFreshnessLambdaTest {
 
     @Test
     void rejectInvalidIdAndMalformedPostBody() {
-        DataFreshnessLambda lambda = new DataFreshnessLambda(new DataFreshnessLambda.Storage() {
+        DataFreshnessLambda lambda = new DataFreshnessLambda(new Storage() {
             @Override
             public void save(String id, String json) {}
 
@@ -169,7 +169,7 @@ public class DataFreshnessLambdaTest {
     void supportsHttpApiV2MethodAndPathUuidLookup() {
         String id = "14caa8ee-ca63-41f4-b57f-074007b2affc";
         DataFreshnessLambda lambda =
-                new DataFreshnessLambda(new DataFreshnessLambda.Storage() {
+                new DataFreshnessLambda(new Storage() {
                     @Override
                     public void save(String id, String json) { }
 
