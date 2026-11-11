@@ -7,7 +7,7 @@ import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 final class DominantAffectMessaging
-        implements DominantAffectLambda.Messaging {
+        implements Messaging {
 
     private final SnsClient sns;
     private final SqsClient sqs;

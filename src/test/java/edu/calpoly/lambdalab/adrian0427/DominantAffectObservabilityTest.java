@@ -17,7 +17,7 @@ class DominantAffectObservabilityTest {
         ByteArrayOutputStream captured = new ByteArrayOutputStream();
 
         DominantAffectLambda lambda =
-                new DominantAffectLambda((DominantAffectLambda.Storage) null);
+                new DominantAffectLambda((Storage) null);
 
         Map<String, Object> event = Map.of(
                 "httpMethod", "POST",

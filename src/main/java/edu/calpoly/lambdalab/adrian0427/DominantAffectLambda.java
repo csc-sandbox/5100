@@ -12,15 +12,6 @@ import java.util.UUID;
 public class DominantAffectLambda
         implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
-    interface Storage {
-        void save(String id, String json);
-        String get(String id);
-    }
-
-    interface Messaging {
-        void publish(String json);
-    }
-
     private final ObjectMapper mapper = new ObjectMapper();
     private final Storage storage;
     private final Messaging messaging;
