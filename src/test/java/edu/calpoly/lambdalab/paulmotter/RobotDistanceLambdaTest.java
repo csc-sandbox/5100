@@ -1031,6 +1031,24 @@ class RobotDistanceLambdaTest {
             assertEquals(1, sqs.messages.size());
         }
 
+        /**
+         * Tests that a DynamoDB write that fails 3 times stops and returns 500. The fake
+         * would succeed on a 4th attempt, so this also proves no extra attempt is made.
+         */
+        @Test
+        void dynamoDbFailsAfterThreeAttempts() {
+            RobotDistanceFakes.FailingDynamo flaky = new RobotDistanceFakes.FailingDynamo(3);
+
+            Map<String, Object> response = postWith(RobotDistanceFakes.lambda(flaky, s3, sns, sqs));
+
+            assertEquals(500, response.get("statusCode"));
+            assertEquals(3, flaky.attempts);
+            assertTrue(flaky.items.isEmpty());
+            assertEquals(1, s3.objects.size(), "S3 was written before DynamoDB failed");
+            assertTrue(sns.messages.isEmpty());
+            assertTrue(sqs.messages.isEmpty());
+        }
+
         /** Tests that an S3 write that fails twice succeeds on the third attempt. */
         @Test
         void s3SucceedsAfterTwoFailures() {
