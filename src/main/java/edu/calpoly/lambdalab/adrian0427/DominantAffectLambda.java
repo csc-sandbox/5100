@@ -12,15 +12,6 @@ import java.util.UUID;
 public class DominantAffectLambda
         implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
-    interface Storage {
-        void save(String id, String json);
-        String get(String id);
-    }
-
-    interface Messaging {
-        void publish(String json);
-    }
-
     private final ObjectMapper mapper = new ObjectMapper();
     private final Storage storage;
     private final Messaging messaging;
@@ -67,6 +58,9 @@ public class DominantAffectLambda
     public Map<String, Object> handleRequest(
             Map<String, Object> event, Context context) {
 
+        long startNanos = System.nanoTime();
+        String requestId = context == null ? null : context.getAwsRequestId();
+
         try {
             if (event == null) {
                 throw new IllegalArgumentException("Missing request");
@@ -75,10 +69,28 @@ public class DominantAffectLambda
             String method = getHttpMethod(event);
 
             if ("GET".equals(method)) {
-                return handleGet(event);
+                Map<String, Object> response = handleGet(event);
+
+                int status = (int) response.get("statusCode");
+
+                DominantAffectObservability.log(
+                        requestId,
+                        "Lambda",
+                        "GET_REQUEST",
+                        status < 400 ? "SUCCESS" : "FAILURE",
+                        startNanos);
+
+                return response;
             }
 
             if (!"POST".equals(method)) {
+                DominantAffectObservability.log(
+                        requestId,
+                        "Lambda",
+                        "METHOD_NOT_ALLOWED",
+                        "FAILURE",
+                        startNanos);
+
                 return httpResponse(405, "{\"error\":\"Method not allowed\"}");
             }
 
@@ -101,7 +113,6 @@ public class DominantAffectLambda
 
             String json = mapper.writeValueAsString(output);
 
-
             if (storage != null) {
                 storage.save(id, json);
             }
@@ -117,16 +128,39 @@ public class DominantAffectLambda
                 messaging.publish(mapper.writeValueAsString(eventMessage));
             }
 
+            DominantAffectObservability.log(
+                    requestId,
+                    "Lambda",
+                    "POST_PROCESSED",
+                    "SUCCESS",
+                    startNanos);
+
             return httpResponse(200, json);
 
         } catch (IllegalArgumentException e) {
+            DominantAffectObservability.log(
+                    requestId,
+                    "Lambda",
+                    "INVALID_REQUEST",
+                    "FAILURE",
+                    startNanos);
+
             return httpResponse(400, "{\"error\":\"Invalid request\"}");
+
         } catch (Exception e) {
+            DominantAffectObservability.log(
+                    requestId,
+                    "Lambda",
+                    "REQUEST_FAILED",
+                    "FAILURE",
+                    startNanos);
+
             if (context != null) {
                 context.getLogger().log(
                         "DominantAffectLambda failure: "
                                 + e.getClass().getSimpleName());
             }
+
             return httpResponse(500, "{\"error\":\"Operation failed\"}");
         }
     }

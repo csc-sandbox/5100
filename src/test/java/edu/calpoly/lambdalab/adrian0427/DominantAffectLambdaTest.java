@@ -171,7 +171,7 @@ class DominantAffectLambdaTest {
     }
 
     private static class FakeStorage
-            implements DominantAffectLambda.Storage {
+            implements Storage {
 
         private final Map<String, String> records = new HashMap<>();
 
@@ -231,8 +231,36 @@ class DominantAffectLambdaTest {
         assertNull(messaging.publishedJson);
     }
 
+    @Test
+    void returns500WhenMessagingFailsAfterStorage() throws Exception {
+        FakeStorage storage = new FakeStorage();
+        FailingMessaging messaging = new FailingMessaging();
+
+        DominantAffectLambda lambda =
+                new DominantAffectLambda(storage, messaging);
+
+        Map<String, Object> event = Map.of(
+                "httpMethod", "POST",
+                "body", "{\"joy\":0.9,\"stress\":0.2}");
+
+        Map<String, Object> response = lambda.handleRequest(event, null);
+
+        assertEquals(500, response.get("statusCode"));
+        assertEquals("{\"error\":\"Operation failed\"}", response.get("body"));
+
+        assertEquals(1, messaging.attempts);
+        assertEquals(1, storage.records.size());
+
+        String savedJson = storage.records.values().iterator().next();
+        Map<?, ?> saved = mapper.readValue(savedJson, Map.class);
+
+        assertEquals("joy", saved.get("metric"));
+        assertEquals(0.9, ((Number) saved.get("value")).doubleValue());
+    }
+
+
     private static class FakeMessaging
-            implements DominantAffectLambda.Messaging {
+            implements Messaging {
 
         private String publishedJson;
 
@@ -242,4 +270,15 @@ class DominantAffectLambdaTest {
         }
     }
 
+
+    private static class FailingMessaging implements Messaging {
+
+        private int attempts;
+
+        @Override
+        public void publish(String json) {
+            attempts++;
+            throw new RuntimeException("Simulated messaging failure");
+        }
+    }
 }

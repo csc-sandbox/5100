@@ -12,7 +12,7 @@ import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
-final class DominantAffectStorage implements DominantAffectLambda.Storage {
+final class DominantAffectStorage implements Storage {
 
     private final DynamoDbClient dynamo;
     private final S3Client s3;
