@@ -1,5 +1,6 @@
 package edu.calpoly.lambdalab.daome;
 
+import edu.calpoly.lambdalab.daome.Exceptions.StorageException;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.core.exception.SdkException;
 

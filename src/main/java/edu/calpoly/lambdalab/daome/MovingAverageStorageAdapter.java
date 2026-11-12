@@ -28,8 +28,7 @@ public class MovingAverageStorageAdapter implements Storage {
     public MovingAverageStorageAdapter(String dbTable, String s3Bucket) {
         this.dbTable = dbTable;
         this.s3Bucket = s3Bucket;
-        this.retryExecutor =
-                new RetryExecutor(3, (failure) -> failure instanceof StorageException, RetryExecutor.sleep(90));
+        this.retryExecutor = new RetryExecutor(3, RetryExecutor::isTransient, RetryExecutor.sleep(500));
     }
 
     @Override
@@ -55,6 +54,7 @@ public class MovingAverageStorageAdapter implements Storage {
             MovingAverageLambdaObservability.log(id, null, "S3", "S3_SAVED", "SUCCESS", s3Start);
         } catch (RuntimeException e) {
             MovingAverageLambdaObservability.log(id, null, "S3", "S3_SAVED", "FAILURE", s3Start);
+            throw new StorageException("Error Sending Data to S3");
         }
 
         long dynamoStart = System.nanoTime();
@@ -79,6 +79,7 @@ public class MovingAverageStorageAdapter implements Storage {
             MovingAverageLambdaObservability.log(id, null, "DynamoDB", "DYNAMODB_SAVED", "SUCCESS", dynamoStart);
         } catch (Exception e) {
             MovingAverageLambdaObservability.log(id, null, "DynamoDB", "DYNAMODB_SAVED", "FAILURE", dynamoStart);
+            throw new StorageException("Error Sending Data to DynamoDB");
         }
 
     }
@@ -86,12 +87,12 @@ public class MovingAverageStorageAdapter implements Storage {
     @Override
     public String get(String id) throws StorageException {
         long s3Start = System.nanoTime();
-        var result = dynamoDbClient.getItem(GetItemRequest
+        var result = retryExecutor.execute(() -> dynamoDbClient.getItem(GetItemRequest
                 .builder()
                 .tableName(dbTable)
                 .key(Map.of("id", AttributeValue.fromS(id)))
                 .consistentRead(true)
-                .build());
+                .build()));
 
         if (!result.hasItem() || result.item().isEmpty()) {
             return null;
@@ -99,7 +100,7 @@ public class MovingAverageStorageAdapter implements Storage {
         var item = result.item();
         if (item.get("operation") == null || !item.get("operation").s().equals(MovingAverageLambda.OPERATION)) {
             MovingAverageLambdaObservability.log(id, null, "DynamoDB", "DYNAMODB_SAVED", "FAILURE", s3Start);
-            return null;
+            throw new StorageException("Invalid Operation");
         }
 
         if (item.get("owner") == null || !item.get("owner").s().equals(MovingAverageLambda.OWNER)) {
