@@ -4,27 +4,22 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import edu.calpoly.lambdalab.daome.data.EventStatus;
 import edu.calpoly.lambdalab.daome.data.MovingAverageLambdaEvent;
-import edu.calpoly.lambdalab.daome.data.MovingAverageLambdaEventResponse;
 import org.eclipse.paho.client.mqttv3.*;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 
-public class MovingAverageMqttCallback implements MqttCallback, MovingAverageAckPublisher, AutoCloseable {
+public class MovingAverageMqttCallback implements MqttCallback, AutoCloseable {
     public static final String OPERATION = "MovingAverageLambda";
     private static final ObjectMapper mapper = new ObjectMapper();
+    private final AckPublisher ackPublisher;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final MqttClient client;
     private final String ackTopic;
 
-    public MovingAverageMqttCallback(String ackTopic, MqttClient client) {
-        this.ackTopic = ackTopic;
-        this.client = client;
+    public MovingAverageMqttCallback(AckPublisher ackPublisher) {
+        this.ackPublisher = ackPublisher;
     }
 
     @Override
@@ -48,6 +43,7 @@ public class MovingAverageMqttCallback implements MqttCallback, MovingAverageAck
                 System.err.println("Failed to publish acknowledge");
             }
 
+            ackPublisher.publish(String.valueOf(new UUID(0L, 0L)), EventStatus.ERROR, "");
         }
 
     }
@@ -57,32 +53,10 @@ public class MovingAverageMqttCallback implements MqttCallback, MovingAverageAck
     public void deliveryComplete(IMqttDeliveryToken token) {
     }
 
-    @Override
-    public void publishAcknowledgement(UUID id, EventStatus status, String errorMessage) throws
-            JsonProcessingException, RuntimeException {
-
-        var eventResponse =
-                new MovingAverageLambdaEventResponse(id,
-                        OPERATION,
-                        status,
-                        errorMessage);
-
-        var jsonStr = mapper.writeValueAsString(eventResponse);
-        executor.execute(() -> {
-            try {
-                var message = new MqttMessage(jsonStr.getBytes(StandardCharsets.UTF_8));
-                message.setQos(1);
-                client.publish(ackTopic + id, message);
-                System.out.println("Published Acknowledgment to" + ackTopic + id);
-            } catch (MqttException e) {
-                System.err.println("Error While Publishing Acknowledgment");
-            }
-        });
-    }
 
     public void handleEvent(MovingAverageLambdaEvent json) throws MqttException, JsonProcessingException {
         if (json.result() == null) {
-            publishAcknowledgement(json.id(), EventStatus.ERROR, "error while parsing result");
+            ackPublisher.publish(String.valueOf(json.id()), EventStatus.ERROR, "error while parsing result");
         } else {
             System.out.printf("""
                     Id: %s
@@ -90,16 +64,13 @@ public class MovingAverageMqttCallback implements MqttCallback, MovingAverageAck
                     Window: %s
                     Averages:  %s
                     %n""", json.id(), json.result().samples(), json.result().windowSize(), json.result().averages());
-            publishAcknowledgement(json.id(), EventStatus.SUCCESS, null);
+            ackPublisher.publish(String.valueOf(json.id()), EventStatus.SUCCESS, null);
         }
     }
 
     @Override
     public void close() throws Exception {
-        if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-            executor.shutdownNow();
-        }
-
+        ackPublisher.close();
     }
 }
 
