@@ -11,6 +11,8 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import edu.calpoly.lambdalab.daome.Exceptions.MessageException;
+import edu.calpoly.lambdalab.daome.Exceptions.StorageException;
 import edu.calpoly.lambdalab.daome.data.MovingAverageData;
 
 public class MovingAverageLambda implements RequestHandler<Map<String, Object>, Map<String, Object>> {
@@ -32,17 +34,19 @@ public class MovingAverageLambda implements RequestHandler<Map<String, Object>, 
 
     @Override
     public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
+        String requestId = context == null ? null : context.getAwsRequestId();
         String id = UUID.randomUUID().toString();
         try {
             String method = (String) event.get("httpMethod");
             var output = switch (method) {
                 case "GET" -> handleGet(event);
-                case "POST" -> handlePost(id, event);
+                case "POST" -> handlePost(requestId, id, event);
                 default -> throw new RuntimeException("Unsupported");
             };
-
+            MovingAverageLambdaObservability.log(id, requestId, "LAMBDA", "REQUEST_RECEIVED", "SUCCESS", 0);
             return httpResponse(200, mapper.writeValueAsString(output));
         } catch (Exception e) {
+            MovingAverageLambdaObservability.log(null, requestId, "LAMBDA", "REQUEST_FAILED", "FAILURE", 0);
             return httpResponse(400, "{\"error\":\"Invalid request\"}");
         }
     }
@@ -58,7 +62,7 @@ public class MovingAverageLambda implements RequestHandler<Map<String, Object>, 
         return mapper.readValue(storage.get(id), new TypeReference<>() {});
     }
 
-    Map<String, Object> handlePost(String id, Map<String, Object> event) throws RuntimeException,
+    Map<String, Object> handlePost(String requestId, String id, Map<String, Object> event) throws RuntimeException,
             JsonProcessingException {
         String body = event.get("body").toString();
         var input = mapper.readValue(body, new TypeReference<Map<String, Object>>() {});
@@ -67,9 +71,20 @@ public class MovingAverageLambda implements RequestHandler<Map<String, Object>, 
         var movingAverages = movingAverage(samples, windowSize);
         var storageData = new MovingAverageData(UUID.fromString(id), samples, windowSize, movingAverages);
         var json = mapper.writeValueAsString(storageData);
-        storage.save(id, json);
-        message.publish(id, json);
 
+        try {
+            storage.save(id, json);
+        } catch (StorageException e) {
+            MovingAverageLambdaObservability.log(null, requestId, "STORAGE", "REQUEST_FAILED", "FAILURE", 0);
+            throw new RuntimeException(e);
+        }
+
+        try {
+            message.publish(id, json);
+        } catch (MessageException e) {
+            MovingAverageLambdaObservability.log(null, requestId, "MESSAGING", "REQUEST_FAILED", "FAILURE", 0);
+            throw new RuntimeException(e);
+        }
         return new HashMap<>(Map.of("id",
                 id,
                 "samples",
@@ -105,16 +120,9 @@ public class MovingAverageLambda implements RequestHandler<Map<String, Object>, 
         return response;
     }
 
-    public interface Storage {
-        void save(String id, String json);
-
-        String get(String id);
-
-    }
 
     public interface Message {
-        // Separate due to requirements
-        void publish(String id, String json);
+        void publish(String id, String json) throws MessageException;
     }
 
 }

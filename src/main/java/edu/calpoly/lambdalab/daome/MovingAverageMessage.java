@@ -1,5 +1,6 @@
 package edu.calpoly.lambdalab.daome;
 
+import edu.calpoly.lambdalab.daome.Exceptions.MessageException;
 import software.amazon.awssdk.services.sns.SnsClient;
 import software.amazon.awssdk.services.sns.model.PublishRequest;
 import software.amazon.awssdk.services.sqs.SqsClient;
@@ -17,7 +18,7 @@ public class MovingAverageMessage implements MovingAverageLambda.Message {
     }
 
     @Override
-    public void publish(String id, String json) {
+    public void publish(String id, String json) throws MessageException {
         var message = String.format("""
                 {
                     "id": "%s",
@@ -25,15 +26,22 @@ public class MovingAverageMessage implements MovingAverageLambda.Message {
                     "result": %s
                 }
                 """, id, MovingAverageLambda.OPERATION, json);
+        long snsStart = System.nanoTime();
         try {
             snsClient.publish(PublishRequest.builder().topicArn(topicArn).message(message).build());
+            MovingAverageLambdaObservability.log(id, null, "SNS", "SNS_PUBLISHED", "SUCCESS", snsStart);
         } catch (Exception e) {
-            System.err.println("Error while publishing to SNS");
+            MovingAverageLambdaObservability.log(id, null, "SNS", "SNS_PUBLISHED", "FAILURE", snsStart);
+           throw new MessageException("Error Publishing to SNS");
         }
+
+        long sqsStart = System.nanoTime();
         try {
             sqsClient.sendMessage(SendMessageRequest.builder().queueUrl(sqsUrl).messageBody(message).build());
+            MovingAverageLambdaObservability.log(id, null, "SQS", "SQS_SENT", "SUCCESS", sqsStart);
         } catch (Exception e) {
-            System.err.println("Error while sending Message to SQS");
+            MovingAverageLambdaObservability.log(id, null, "SQS", "SQS_SENT", "FAILURE", sqsStart);
+            throw new MessageException("Error publishing to SQS");
         }
     }
 
