@@ -9,31 +9,27 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import edu.calpoly.lambdalab.paulmotter.RobotDistanceObservability.Status;
+
 /**
- * AWS Lambda function that calculates the distance between two 3 dimensional points.
- * 
+ * AWS Lambda that calculates the distance between two 3D points and stores and
+ * publishes POST results. Storage and messaging are injected through StorageAdapter
+ * and MessagingAdapter, and each outcome is logged as structured JSON.
+ *
  * @author Paul Motter (PaulMotter)
- * @version 1.0 
+ * @version 1.1 (2026-11-10)
  */
 public class RobotDistanceLambda implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
     public static final String OPERATION_NAME = "RobotDistance";
     public static final String OWNER_NAME = "paulmotter";
 
-    interface StorageAdapter{
-        public void save(RobotDistanceLambdaData data, String json);
-        public String get(String id);
-    }
-    interface MessagingAdapter{
-        public void publish(String json);
-    }
-
     public class RobotDistancedata{
 
     }
 
     private final ObjectMapper mapper = new ObjectMapper();
-    private final StorageAdapter storage;
+    private final StorageAdapter<RobotDistanceLambdaData> storage;
     private final MessagingAdapter messaging;
     private RobotDistanceLambdaData data;
 
@@ -54,7 +50,7 @@ public class RobotDistanceLambda implements RequestHandler<Map<String, Object>, 
      * @param SA StorageAdapter 
      * @param MA MessagingAdapter
      */
-    public RobotDistanceLambda(StorageAdapter SA, MessagingAdapter MA){
+    public RobotDistanceLambda(StorageAdapter<RobotDistanceLambdaData> SA, MessagingAdapter MA){
         storage = SA;
         messaging = MA;
     }
@@ -72,8 +68,11 @@ public class RobotDistanceLambda implements RequestHandler<Map<String, Object>, 
 
     @Override
     public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
+        long startNano = System.nanoTime();
+        String requestId = context == null ? null : context.getAwsRequestId();
         try {
             if (event == null) {
+                RobotDistanceObservability.log(null, requestId, "lambda", "parsing event", Status.FAILURE, 0);
                 return httpResponse(400, "{\"error\":\"Invalid request\"}");
             }
             // if requestContext exists use it, otherwise empty map.
@@ -88,36 +87,52 @@ public class RobotDistanceLambda implements RequestHandler<Map<String, Object>, 
             Map<String, Object> body = parseBody(event.get("body"));
             // Match to the proper method.
             if ("GET".equals(method) && query.containsKey("id")) {
-                return processGET(query);
+                return processGET(query, requestId, startNano);
             }
             else if("GET".equals(method) && !query.containsKey("id")){
-                return processLegacyGET(query);
+                return processLegacyGET(query, requestId, startNano);
             }
             else if("POST".equals(method)){
-                return processPOST(body);
+                return processPOST(body, requestId, startNano);
             }
             else{
+                RobotDistanceObservability.log(null, requestId, "Lambda", "unsupported HTTP method", Status.FAILURE, startNano);
                 return httpResponse(405, "{\"error\":\"Unsupported Method\"}");
             }
 
         }catch (IllegalArgumentException e) {
+            RobotDistanceObservability.log(null, requestId, "Lambda", "INVALID_REQUEST", Status.FAILURE, startNano, e);
             return httpResponse(400, "{\"error\":\"Invalid request\"}");
         } catch (Exception e) {
-        if (context != null) context.getLogger().log("RobotDistanceLambda failure: " + e.getClass().getSimpleName());
+            RobotDistanceObservability.log(null, requestId, "Lambda", "REQUEST_FAILED", Status.FAILURE, startNano, e);
             return httpResponse(500, "{\"error\":\"Operation failed\"}");
         }
     }
 
-    private Map<String, Object> processGET(Map<String, Object> query){
+    private Map<String, Object> processGET(Map<String, Object> query, String requestId, long startNano){
         String UUID = String.valueOf(query.get("id"));
-        // Input validation.
-        if (!isUuid(UUID)) return httpResponse(400, "{\"error\":\"Invlaid id\"}");
 
-        if (storage == null) return httpResponse(503, "{\"error\":\"Storage not configured\"}");
+        // Input validation.
+        if (!isUuid(UUID)) {
+            RobotDistanceObservability.log(null, requestId, "Lambda", "GET, invalid UUID", Status.FAILURE, 0);
+            return httpResponse(400, "{\"error\":\"Invlaid id\"}");
+        };
+
+        if (storage == null) {
+            RobotDistanceObservability.log(UUID, requestId, "Lambda", "GET, storage is null", Status.FAILURE, 0);
+            return httpResponse(503, "{\"error\":\"Storage not configured\"}");
+        }
         String result = storage.get(UUID);
         // Result exists check.
-        if (result == null) return httpResponse(404, "{\"error\":\"Not found\"}");
-        else return httpResponse(200, result);
+        if (result == null) {
+            RobotDistanceObservability.log(UUID, requestId, "Lambda", "GET, no result", Status.SUCCESS, startNano);
+            return httpResponse(404, "{\"error\":\"Not found\"}");
+
+        }
+        else {
+            RobotDistanceObservability.log(UUID, requestId, "Lambda", "GET, reurning result", Status.SUCCESS, startNano);
+            return httpResponse(200, result);
+        }
     }
 
     /**
@@ -126,41 +141,38 @@ public class RobotDistanceLambda implements RequestHandler<Map<String, Object>, 
      * @param query 
      * @return Map Response.
      */
-    private Map<String, Object> processLegacyGET(Map<String, Object> query)
+    private Map<String, Object> processLegacyGET(Map<String, Object> query, String requestId, long startNano)
     {
-        // float[] pos1 = new float[3];
-        // float[] pos2 = new float[3];
        try{
             // Parsing can throw errors.
             data = RobotDistanceLambdaData.fromParams(query);
             if (query == null) throw new IllegalArgumentException();
-            // pos1[0] = Float.parseFloat((String) query.get("x1"));
-            // pos1[1] = Float.parseFloat((String) query.get("y1"));
-            // pos1[2] = Float.parseFloat((String) query.get("z1"));
-            // pos2[0] = Float.parseFloat((String) query.get("x2"));
-            // pos2[1] = Float.parseFloat((String) query.get("y2"));
-            // pos2[2] = Float.parseFloat((String) query.get("z2"));
 
             // calculateDistance checks to NaN and Infinity.
             data.distance = calculateDistance(data);
 
             Map<String, Object> output = new HashMap<>();
             output.put("distance", data.distance);
-                // mapper can throw error. 
+            // mapper can throw error. 
+            RobotDistanceObservability.log(null, requestId, "Lambda", "Legacy GET, done returning result", Status.SUCCESS, startNano);
             return httpResponse(200, mapper.writeValueAsString(output));
         } catch (Exception e){
+            RobotDistanceObservability.log(null, requestId, "Lambda", "Legacy GET, invalid request structure", Status.FAILURE, 0);
             return httpResponse(400, "{\"error\":\"Invalid request\"}");
         } 
     }
 
-    private Map<String, Object> processPOST(Map<String, Object> params) throws JsonProcessingException{
+    private Map<String, Object> processPOST(Map<String, Object> params, String requestId, long startNano) throws JsonProcessingException{
         try {
             // Parse, calculate distance, save.
             data = RobotDistanceLambdaData.fromParams(params);
             data.distance = calculateDistance(data);
             data.id = UUID.randomUUID().toString();
             String jsonData = mapper.writeValueAsString(data);
-            if (storage == null) return httpResponse(503, "{\"error\":\"Storage not configured\"}");
+            if (storage == null) {
+                RobotDistanceObservability.log(data.id, requestId, "Lambda", "POST, storage is null", Status.FAILURE, 0);
+                return httpResponse(503, "{\"error\":\"Storage not configured\"}");
+            }
             storage.save(data, jsonData);
             // Parse event message and publish.
             Map<String, Object> eventMap = new HashMap<>();
@@ -168,12 +180,22 @@ public class RobotDistanceLambda implements RequestHandler<Map<String, Object>, 
             eventMap.put("operation", "RobotDistanceLambda");
             eventMap.put("result", data.distance);
             String jsonEvent = mapper.writeValueAsString(eventMap);
-            if (messaging == null) return httpResponse(503, "{\"error\":\"Messaging not configured\"}");
+            if (messaging == null) {
+                RobotDistanceObservability.log(data.id, requestId, "Lambda", "POST, messaging is null", Status.FAILURE, 0);
+                return httpResponse(503, "{\"error\":\"Messaging not configured\"}");
+            }
             messaging.publish(jsonEvent);
             // Return
+            RobotDistanceObservability.log(data.id, requestId, "Lambda", "POST, done returning result", Status.SUCCESS, startNano);
             return httpResponse(200, jsonData);
         } catch (IllegalArgumentException e){
+            String id = (data == null ? null : data.id);
+            RobotDistanceObservability.log(id, requestId, "Lambda", "POST, invalid request structure", Status.FAILURE, 0);
             return httpResponse(400, "{\"error\":\"Invalid request\"}");
+        } catch (Exception e){
+            String id = (data == null ? null : data.id);
+            RobotDistanceObservability.log(id, requestId, "Lambda", "REQUEST_FAILED", Status.FAILURE, startNano, e);
+            return httpResponse(500, "{\"error\":\"Operation failed\"}");
         }
     }
 
