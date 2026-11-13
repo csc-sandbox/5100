@@ -19,17 +19,33 @@ class RetryExecutorTest {
     void transientFailureSucceedsOnThirdAttempt() {
         AtomicInteger attempts = new AtomicInteger();
         AtomicInteger delays = new AtomicInteger();
-        Messaging fake = json -> {
-            if (attempts.incrementAndGet() < 3) {
-                throw new IllegalStateException("Simulated temporary outage");
+        Storage fakeStorage = new Storage() {
+            String id;
+            String json;
+            @Override
+            public void save(String saveId, String saveJson) {
+                if (attempts.incrementAndGet() < 3) {
+                    throw new IllegalStateException("Simulated temporary outage");
+                }
+                else {
+                    id = saveId;
+                    json = saveJson;
+                }
+            }
+
+            @Override
+            public String get(String getId) {
+                return getId.equals(id) ? json : null;
             }
         };
-        Messaging messaging = new RetryMessaging(fake, threeAttempts(delays));
+        Storage storage = new RetryStorage(fakeStorage, threeAttempts(delays));
 
-        messaging.publish("{\"id\":\"test\"}");
+        storage.save("test", "{\"id\":\"test\"}");
 
         assertEquals(3, attempts.get());
         assertEquals(2, delays.get());
+
+        assertEquals("{\"id\":\"test\"}", storage.get("test"));  // Proves the item saved
     }
 
     @Test
@@ -37,14 +53,22 @@ class RetryExecutorTest {
         AtomicInteger attempts = new AtomicInteger();
         AtomicInteger delays = new AtomicInteger();
         IllegalStateException outage = new IllegalStateException("Still unavailable");
-        Messaging fake = json -> {
-            attempts.incrementAndGet();
-            throw outage;
+        Storage fakeStorage = new Storage() {
+            @Override
+            public void save(String id, String json) {
+                attempts.incrementAndGet();
+                throw outage;
+            }
+
+            @Override
+            public String get(String id) {
+                return "";
+            }
         };
-        Messaging messaging = new RetryMessaging(fake, threeAttempts(delays));
+        Storage storage = new RetryStorage(fakeStorage, threeAttempts(delays));
 
         IllegalStateException thrown = assertThrows(IllegalStateException.class,
-                () -> messaging.publish("{\"id\":\"test\"}"));
+                () -> storage.save("test", "{\"id\":\"test\"}"));
 
         assertSame(outage, thrown);
         assertEquals(3, attempts.get());
@@ -55,13 +79,21 @@ class RetryExecutorTest {
     void nonRetryableFailureStopsImmediately() {
         AtomicInteger attempts = new AtomicInteger();
         AtomicInteger delays = new AtomicInteger();
-        Messaging fake = json -> {
-            attempts.incrementAndGet();
-            throw new IllegalArgumentException("Invalid input");
-        };
-        Messaging messaging = new RetryMessaging(fake, threeAttempts(delays));
+        Storage fakeStorage = new Storage() {
+            @Override
+            public void save(String id, String json) {
+                attempts.incrementAndGet();
+                throw new IllegalArgumentException("Invalid input");
+            }
 
-        assertThrows(IllegalArgumentException.class, () -> messaging.publish("{}"));
+            @Override
+            public String get(String id) {
+                return "";
+            }
+        };
+        Storage storage = new RetryStorage(fakeStorage, threeAttempts(delays));
+
+        assertThrows(IllegalArgumentException.class, () -> storage.save("", "{}"));
         assertEquals(1, attempts.get());
         assertEquals(0, delays.get());
     }
