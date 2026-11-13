@@ -7,6 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -63,7 +66,7 @@ class CoordinateNormalizerLambdaTest {
 
   @Test
   void postUsesOneGeneratedUuidForResponseStorageAndMessaging() throws Exception {
-    class FakeStorage implements CoordinateNormalizerLambda.Storage {
+    class FakeStorage implements Storage {
       String id;
       String json;
 
@@ -103,11 +106,45 @@ class CoordinateNormalizerLambdaTest {
   }
 
   @Test
+  void postAcceptsHttpApiV2JsonBody() throws Exception {
+    List<String> messages = new ArrayList<>();
+    CoordinateNormalizerLambda postLambda =
+        new CoordinateNormalizerLambda(null, messages::add);
+
+    Map<String, Object> response = postLambda.handleRequest(Map.of(
+        "requestContext", Map.of("http", Map.of("method", "POST")),
+        "isBase64Encoded", false,
+        "body", "{\"x\":100,\"y\":200,\"width\":640,\"height\":480}"), null);
+
+    assertEquals(200, response.get("statusCode"));
+    JsonNode body = mapper.readTree(response.get("body").toString());
+    assertEquals(0.15625, body.path("result").path("normalizedX").asDouble(), 0.000001);
+    assertEquals(200.0 / 480.0,
+        body.path("result").path("normalizedY").asDouble(), 0.000001);
+    assertEquals(List.of(response.get("body")), messages);
+  }
+
+  @Test
+  void postAcceptsCoordinateQueryParametersAndDirectEvents() {
+    CoordinateNormalizerLambda postLambda = new CoordinateNormalizerLambda(null, null);
+    Map<String, Object> coordinates =
+        Map.of("x", "100", "y", "200", "width", "640", "height", "480");
+
+    Map<String, Object> queryResponse = postLambda.handleRequest(Map.of(
+        "requestContext", Map.of("http", Map.of("method", "POST")),
+        "queryStringParameters", coordinates), null);
+    Map<String, Object> directResponse = postLambda.handleRequest(coordinates, null);
+
+    assertEquals(200, queryResponse.get("statusCode"));
+    assertEquals(200, directResponse.get("statusCode"));
+  }
+
+  @Test
   void getByUuidReturnsPersistedJsonAndMissingReturns404() {
     String id = "c5f1b1b7-ccf5-4b98-80f9-f1123589a123";
     String json = "{\"id\":\"" + id + "\",\"result\":{}}";
     CoordinateNormalizerLambda lookupLambda =
-        new CoordinateNormalizerLambda(new CoordinateNormalizerLambda.Storage() {
+        new CoordinateNormalizerLambda(new Storage() {
           @Override
           public void save(String savedId, String savedJson) { }
 
@@ -132,7 +169,7 @@ class CoordinateNormalizerLambdaTest {
   void supportsHttpApiV2MethodAndPathUuidLookup() {
     String id = "14caa8ee-ca63-41f4-b57f-074007b2affc";
     CoordinateNormalizerLambda lookupLambda =
-        new CoordinateNormalizerLambda(new CoordinateNormalizerLambda.Storage() {
+        new CoordinateNormalizerLambda(new Storage() {
           @Override
           public void save(String savedId, String savedJson) { }
 
@@ -168,7 +205,7 @@ class CoordinateNormalizerLambdaTest {
   @Test
   void rejectsInvalidLookupIdAndMalformedPostBody() {
     CoordinateNormalizerLambda configured =
-        new CoordinateNormalizerLambda(new CoordinateNormalizerLambda.Storage() {
+        new CoordinateNormalizerLambda(new Storage() {
           public void save(String id, String json) { }
           public String get(String id) { return null; }
         });
@@ -181,6 +218,26 @@ class CoordinateNormalizerLambdaTest {
 
     assertEquals(400, invalidId.get("statusCode"));
     assertEquals(400, malformedBody.get("statusCode"));
+  }
+
+  @Test
+  void invalidPostPrintsExceptionMessageAndStackTrace() {
+    ByteArrayOutputStream diagnostics = new ByteArrayOutputStream();
+    PrintStream original = System.out;
+    Map<String, Object> response;
+    try {
+      System.setOut(new PrintStream(diagnostics, true, StandardCharsets.UTF_8));
+      response = lambda.handleRequest(
+          Map.of("httpMethod", "POST", "body", "{\"x\":100}"), null);
+    } finally {
+      System.setOut(original);
+    }
+
+    String output = diagnostics.toString(StandardCharsets.UTF_8);
+    assertEquals(400, response.get("statusCode"));
+    assertTrue(output.contains("Missing numeric field: y"));
+    assertTrue(output.contains("java.lang.IllegalArgumentException"));
+    assertTrue(output.contains("CoordinateNormalizerLambda.parseFiniteNumber"));
   }
 
   private Map<String, Object> request(String x, String y, String width, String height) {

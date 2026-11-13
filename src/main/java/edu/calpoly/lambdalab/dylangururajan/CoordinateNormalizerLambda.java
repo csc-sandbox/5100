@@ -1,6 +1,7 @@
 package edu.calpoly.lambdalab.dylangururajan;
 
 import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.LambdaLogger;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,20 +24,11 @@ public class CoordinateNormalizerLambda
 
   static final String OPERATION = "CoordinateNormalizerLambda";
 
-  interface Storage {
-    void save(String id, String json);
-
-    String get(String id);
-  }
-
-  interface Messaging {
-    void publish(String json);
-  }
-
   private final ObjectMapper mapper = new ObjectMapper();
   private final Storage storage;
   private final Messaging messaging;
   private final Supplier<UUID> uuidSupplier;
+  private final CoordinateNormalizerObservability observability;
 
   /** Uses the A04 environment variables configured on the deployed Lambda. */
   public CoordinateNormalizerLambda() {
@@ -57,13 +49,24 @@ public class CoordinateNormalizerLambda
 
   CoordinateNormalizerLambda(
       Storage storage, Messaging messaging, Supplier<UUID> uuidSupplier) {
+    this(storage, messaging, uuidSupplier, new CoordinateNormalizerObservability());
+  }
+
+  CoordinateNormalizerLambda(
+      Storage storage,
+      Messaging messaging,
+      Supplier<UUID> uuidSupplier,
+      CoordinateNormalizerObservability observability) {
     this.storage = storage;
     this.messaging = messaging;
     this.uuidSupplier = uuidSupplier;
+    this.observability = observability;
   }
 
   @Override
   public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
+    long started = System.nanoTime();
+    String requestId = requestId(context);
     try {
       if (event == null) {
         throw new IllegalArgumentException("Request is required");
@@ -72,19 +75,21 @@ public class CoordinateNormalizerLambda
       String method = httpMethod(event);
       if ("GET".equals(method)) {
         String id = lookupId(event);
-        return id == null ? handleLegacyGet(event) : handleLookup(id);
+        return id == null ? handleLegacyGet(event) : handleLookup(id, context, requestId);
       }
       if ("POST".equals(method)) {
-        return handlePost(event);
+        return handlePost(event, context, requestId);
       }
       return httpResponse(405, "{\"error\":\"Method not allowed\"}");
     } catch (IllegalArgumentException exception) {
+      printException(exception);
+      observability.log(logger(context), "Lambda", "REQUEST_REJECTED", "FAILURE",
+          requestId, elapsedMillis(started), exception);
       return httpResponse(400, "{\"error\":\"Invalid request\"}");
     } catch (Exception exception) {
-      if (context != null) {
-        context.getLogger().log(
-            "CoordinateNormalizerLambda failure: " + exception.getClass().getSimpleName());
-      }
+      printException(exception);
+      observability.log(logger(context), "Lambda", "REQUEST_FAILED", "FAILURE",
+          requestId, elapsedMillis(started), exception);
       return httpResponse(500, "{\"error\":\"Operation failed\"}");
     }
   }
@@ -99,7 +104,8 @@ public class CoordinateNormalizerLambda
     return httpResponse(200, mapper.writeValueAsString(normalized));
   }
 
-  private Map<String, Object> handlePost(Map<String, Object> event) throws Exception {
+  private Map<String, Object> handlePost(
+      Map<String, Object> event, Context context, String requestId) throws Exception {
     Map<String, Object> input = requestBody(event);
     double x = parseFiniteNumber(input, "x");
     double y = parseFiniteNumber(input, "y");
@@ -119,22 +125,25 @@ public class CoordinateNormalizerLambda
     String json = mapper.writeValueAsString(resultEvent);
 
     if (storage != null) {
-      storage.save(id, json);
+      runLogged(
+          context, "Storage", "RESULT_SAVED", requestId, () -> storage.save(id, json));
     }
     if (messaging != null) {
-      messaging.publish(json);
+      runLogged(
+          context, "Messaging", "RESULT_PUBLISHED", requestId, () -> messaging.publish(json));
     }
     return httpResponse(200, json);
   }
 
-  private Map<String, Object> handleLookup(String id) {
+  private Map<String, Object> handleLookup(String id, Context context, String requestId) {
     if (!isUuid(id)) {
       return httpResponse(400, "{\"error\":\"Invalid id\"}");
     }
     if (storage == null) {
       return httpResponse(503, "{\"error\":\"Storage not configured\"}");
     }
-    String json = storage.get(id);
+    String json = callLogged(
+        context, "Storage", "RESULT_LOOKED_UP", requestId, () -> storage.get(id));
     return json == null
         ? httpResponse(404, "{\"error\":\"Not found\"}")
         : httpResponse(200, json);
@@ -173,12 +182,18 @@ public class CoordinateNormalizerLambda
   private Map<String, Object> requestBody(Map<String, Object> event) {
     Object body = event.get("body");
     if (body instanceof Map<?, ?> bodyMap) {
-      Map<String, Object> copy = new LinkedHashMap<>();
-      bodyMap.forEach((key, value) -> copy.put(String.valueOf(key), value));
-      return copy;
+      return stringKeyedCopy(bodyMap);
     }
     if (!(body instanceof String text) || text.isBlank()) {
-      throw new IllegalArgumentException("JSON body is required");
+      // Accept the query-style contract used by the original GET endpoint and direct Lambda test
+      // events as compatibility fallbacks. A supplied nonblank body must still be valid JSON.
+      if (event.get("queryStringParameters") instanceof Map<?, ?> query && !query.isEmpty()) {
+        return stringKeyedCopy(query);
+      }
+      if (hasCoordinateField(event)) {
+        return stringKeyedCopy(event);
+      }
+      throw new IllegalArgumentException("JSON body or coordinate parameters are required");
     }
     if (Boolean.TRUE.equals(event.get("isBase64Encoded"))) {
       text = new String(Base64.getDecoder().decode(text), StandardCharsets.UTF_8);
@@ -188,6 +203,19 @@ public class CoordinateNormalizerLambda
     } catch (Exception exception) {
       throw new IllegalArgumentException("Body must be a JSON object", exception);
     }
+  }
+
+  private Map<String, Object> stringKeyedCopy(Map<?, ?> source) {
+    Map<String, Object> copy = new LinkedHashMap<>();
+    source.forEach((key, value) -> copy.put(String.valueOf(key), value));
+    return copy;
+  }
+
+  private boolean hasCoordinateField(Map<String, Object> event) {
+    return event.containsKey("x")
+        || event.containsKey("y")
+        || event.containsKey("width")
+        || event.containsKey("height");
   }
 
   private String httpMethod(Map<String, Object> event) {
@@ -247,6 +275,50 @@ public class CoordinateNormalizerLambda
     response.put("headers", Map.of("Content-Type", "application/json"));
     response.put("body", body);
     return response;
+  }
+
+  private void runLogged(
+      Context context, String service, String event, String requestId, Runnable operation) {
+    callLogged(context, service, event, requestId, () -> {
+      operation.run();
+      return null;
+    });
+  }
+
+  private <T> T callLogged(
+      Context context,
+      String service,
+      String event,
+      String requestId,
+      Supplier<T> operation) {
+    long started = System.nanoTime();
+    try {
+      T result = operation.get();
+      observability.log(logger(context), service, event, "SUCCESS", requestId,
+          elapsedMillis(started), null);
+      return result;
+    } catch (RuntimeException failure) {
+      observability.log(logger(context), service, event, "FAILURE", requestId,
+          elapsedMillis(started), failure);
+      throw failure;
+    }
+  }
+
+  private long elapsedMillis(long started) {
+    return Math.max(0, (System.nanoTime() - started) / 1_000_000);
+  }
+
+  private String requestId(Context context) {
+    return context == null ? null : context.getAwsRequestId();
+  }
+
+  private LambdaLogger logger(Context context) {
+    return context == null ? null : context.getLogger();
+  }
+
+  private void printException(Exception exception) {
+    System.out.println(exception.getMessage());
+    exception.printStackTrace(System.out);
   }
 
   private static Storage createStorage(String table, String bucket) {

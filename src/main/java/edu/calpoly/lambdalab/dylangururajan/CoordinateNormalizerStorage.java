@@ -11,7 +11,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 /** Persists the same result JSON in the shared A04 DynamoDB table and S3 bucket. */
-final class CoordinateNormalizerStorage implements CoordinateNormalizerLambda.Storage {
+final class CoordinateNormalizerStorage implements Storage {
   static final String OWNER = "dylangururajan";
   static final String FEATURE = "coordinate-normalizer";
   static final String S3_PREFIX = OWNER + "/" + FEATURE + "/";

@@ -6,7 +6,7 @@ import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 /** Publishes SNS and SQS independently using the same correlated result JSON. */
-final class CoordinateNormalizerMessaging implements CoordinateNormalizerLambda.Messaging {
+final class CoordinateNormalizerMessaging implements Messaging {
   private final SnsClient sns;
   private final SqsClient sqs;
   private final String topicArn;
