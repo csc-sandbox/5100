@@ -28,6 +28,7 @@ public class DataFreshnessObservabilityTest {
         assertEquals("SUCCESS", event.get("status").asText());
         assertTrue(event.has("readingId"));
         assertTrue(event.has("requestId"));
+        assertEquals("lambda-request-1", event.get("requestId").asText());  // Checking request ID
         assertTrue(event.get("durationMs").asDouble() >= 0);
         assertFalse(event.has("payload"));
     }
