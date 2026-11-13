@@ -5,21 +5,18 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import software.amazon.awssdk.core.sync.RequestBody;
+
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
-import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.sns.SnsClient;
-import software.amazon.awssdk.services.sns.model.PublishRequest;
 import software.amazon.awssdk.services.sqs.SqsClient;
-import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.core.retry.RetryPolicy;
 
 /**
  * AWS Lambda function that finds the closest LiDAR measurement
@@ -31,25 +28,6 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 public class LidarClosestLambda
     implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
-  interface Storage {
-    void save(String id, String json);
-    String get(String id);
-    void saveToS3(String id, String json);
-  }
-
-  interface EventPublisher {
-    void publish(String json);
-  }
-
-  interface QueuePublisher {
-    void send(String json);
-  }
-
-  private static final String TABLE_NAME = "csc5100-results";
-  private static final String BUCKET_NAME = "csc5100-results";
-  private static final String S3_PREFIX = "briggsmurphy/LidarClosestLambda/";
-  private static final String QUEUE_NAME = "csc5100-processing";
-
   private final ObjectMapper mapper = new ObjectMapper();
   private final Storage storage;
   private final EventPublisher publisher;
@@ -57,14 +35,18 @@ public class LidarClosestLambda
 
   public LidarClosestLambda() {
     DynamoDbClient dynamoClient = DynamoDbClient.create();
-    S3Client s3Client = S3Client.create();
+    S3Client s3Client = S3Client.builder()
+      .overrideConfiguration(ClientOverrideConfiguration.builder()
+          .retryPolicy(RetryPolicy.none())
+          .build())
+      .build();
     SnsClient snsClient = SnsClient.create();
     SqsClient sqsClient = SqsClient.create();
 
-    this.storage = new DynamoStorage(dynamoClient, s3Client);
-    this.publisher = new SnsPublisher(
+    this.storage = new LidarClosestStorage(dynamoClient, s3Client);
+    this.publisher = new LidarClosestEventPublisher(
         snsClient, System.getenv("SNS_TOPIC_ARN"));
-    this.queuePublisher = new SqsPublisher(
+    this.queuePublisher = new LidarClosestQueuePublisher(
         sqsClient, System.getenv("SQS_QUEUE_URL"));
   }
 
@@ -94,109 +76,6 @@ public class LidarClosestLambda
     this.queuePublisher = queuePublisher;
   }
 
-  private static class SnsPublisher implements EventPublisher {
-    private final SnsClient client;
-    private final String topicArn;
-
-    SnsPublisher(SnsClient client, String topicArn) {
-      this.client = client;
-      this.topicArn = topicArn;
-    }
-
-    @Override
-    public void publish(String json) {
-      if (topicArn == null || topicArn.isBlank()) {
-        throw new IllegalStateException(
-            "SNS_TOPIC_ARN environment variable is not set");
-      }
-
-      client.publish(PublishRequest.builder()
-          .topicArn(topicArn)
-          .message(json)
-          .build());
-    }
-  }
-
-  private static class SqsPublisher implements QueuePublisher {
-    private final SqsClient client;
-    private final String queueUrl;
-
-    SqsPublisher(SqsClient client, String queueUrl) {
-      this.client = client;
-      this.queueUrl = queueUrl;
-    }
-
-    @Override
-    public void send(String json) {
-      if (queueUrl == null || queueUrl.isBlank()) {
-        throw new IllegalStateException(
-            "SQS_QUEUE_URL environment variable is not set for "
-                + QUEUE_NAME);
-      }
-
-      client.sendMessage(SendMessageRequest.builder()
-          .queueUrl(queueUrl)
-          .messageBody(json)
-          .build());
-    }
-  }
-
-  private static class DynamoStorage implements Storage {
-    private final DynamoDbClient client;
-    private final S3Client s3Client;
-
-    DynamoStorage(DynamoDbClient client, S3Client s3Client) {
-      this.client = client;
-      this.s3Client = s3Client;
-    }
-
-    @Override
-    public void save(String id, String json) {
-      Map<String, AttributeValue> item = new HashMap<>();
-      item.put("id", AttributeValue.builder().s(id).build());
-      item.put("result", AttributeValue.builder().s(json).build());
-
-      client.putItem(PutItemRequest.builder()
-          .tableName(TABLE_NAME)
-          .item(item)
-          .build());
-    }
-
-    @Override
-    public String get(String id) {
-      Map<String, AttributeValue> key = Map.of(
-          "id", AttributeValue.builder().s(id).build());
-
-      Map<String, AttributeValue> item = client.getItem(
-          GetItemRequest.builder()
-              .tableName(TABLE_NAME)
-              .key(key)
-              .consistentRead(true)
-              .build())
-          .item();
-
-      if (item == null || item.isEmpty()) {
-        return null;
-      }
-
-      AttributeValue result = item.get("result");
-      return result == null ? null : result.s();
-    }
-
-    @Override
-    public void saveToS3(String id, String json) {
-      String key = S3_PREFIX + id + ".json";
-
-      s3Client.putObject(
-          PutObjectRequest.builder()
-              .bucket(BUCKET_NAME)
-              .key(key)
-              .contentType("application/json")
-              .build(),
-          RequestBody.fromString(json));
-    }
-  }
-
   private static class SnsPublishException extends RuntimeException {
     SnsPublishException(Exception cause) {
       super(cause);
@@ -213,6 +92,10 @@ public class LidarClosestLambda
   @SuppressWarnings("unchecked")
   public Map<String, Object> handleRequest(
       Map<String, Object> event, Context context) {
+
+    String requestId = context == null ? null : context.getAwsRequestId();
+    long startNanos = System.nanoTime();
+
     try {
       if (event == null) {
         return httpResponse(400, "{\"error\":\"Invalid request\"}");
@@ -254,6 +137,8 @@ public class LidarClosestLambda
           return httpResponse(404, "{\"error\":\"Result not found\"}");
         }
 
+        LidarClosestObservability.log(
+          requestId, "Lambda", "REQUEST", "SUCCESS", startNanos);
         return httpResponse(200, json);
       }
 
@@ -295,7 +180,7 @@ public class LidarClosestLambda
       storage.save(id, json);
       storage.saveToS3(id, json);
 
-      // Task 4: publish independently to SNS using the existing format.
+      // Publish independently to SNS.
       Map<String, Object> publishedEvent = new HashMap<>();
       publishedEvent.put("id", id);
       publishedEvent.put("operation", "LidarClosestLambda");
@@ -309,7 +194,7 @@ public class LidarClosestLambda
         throw new SnsPublishException(e);
       }
 
-      // Task 5: publish independently to SQS using the required "id" field.
+      // Publish independently to SQS.
       Map<String, Object> queueEvent = new HashMap<>();
       queueEvent.put("id", id);
       queueEvent.put("operation", "LidarClosestLambda");
@@ -329,24 +214,18 @@ public class LidarClosestLambda
       return httpResponse(400, "{\"error\":\"Invalid request\"}");
 
     } catch (SnsPublishException e) {
-      if (context != null) {
-        context.getLogger().log(
-            "SNS publishing failed: " + e.getCause().getMessage());
-      }
+      LidarClosestObservability.log(
+          requestId, "SNS", "PUBLISH", "FAILURE", startNanos);
       return httpResponse(500, "{\"error\":\"SNS publishing failed\"}");
 
     } catch (SqsPublishException e) {
-      if (context != null) {
-        context.getLogger().log(
-            "SQS publishing failed: " + e.getCause().getMessage());
-      }
+      LidarClosestObservability.log(
+          requestId, "SQS", "PUBLISH", "FAILURE", startNanos);
       return httpResponse(500, "{\"error\":\"SQS publishing failed\"}");
 
     } catch (Exception e) {
-      if (context != null) {
-        context.getLogger().log(
-            "LidarClosestLambda failure: " + e.getMessage());
-      }
+      LidarClosestObservability.log(
+          requestId, "Lambda", "REQUEST", "FAILURE", startNanos);
       return httpResponse(500, "{\"error\":\"Storage operation failed\"}");
     }
   }
