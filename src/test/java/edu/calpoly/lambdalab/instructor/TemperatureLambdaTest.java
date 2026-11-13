@@ -58,7 +58,7 @@ class TemperatureLambdaTest {
 
   @Test
   void postPersistsAndGetRetrievesSameId() {
-    class FakeStorage implements TemperatureLambda.Storage {
+    class FakeStorage implements Storage {
       final Map<String, String> values = new HashMap<>();
       public void save(String id, String json) { values.put(id, json); }
       public String get(String id) { return values.get(id); }
@@ -80,7 +80,7 @@ class TemperatureLambdaTest {
 
   @Test
   void rejectsInvalidIdAndReturns404ForMissingRecord() {
-    TemperatureLambda lambda = new TemperatureLambda(new TemperatureLambda.Storage() {
+    TemperatureLambda lambda = new TemperatureLambda(new Storage() {
       public void save(String id, String json) { }
       public String get(String id) { return null; }
     });
@@ -93,7 +93,7 @@ class TemperatureLambdaTest {
 
   @Test
   void postSendsSameCorrelatedPayloadToIndependentMessagingChannels() {
-    class FakeStorage implements TemperatureLambda.Storage {
+    class FakeStorage implements Storage {
       public void save(String id, String json) { }
       public String get(String id) { return null; }
     }

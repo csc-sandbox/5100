@@ -8,24 +8,17 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Temperature conversion API. Legacy GET conversions remain read-only.
- * A04 POST persists when both storage environment variables are configured.
+ * Handles the CSC 5100 temperature conversion REST API, including GET lookups and POST requests that can persist readings and publish events through injected storage and messaging adapters.
+ *
+ * @author Javier Gonzalez-Sanchez
+ * @version 2.0 (2026-10-29)
  */
 public class TemperatureLambda implements RequestHandler<Map<String, Object>, Map<String, Object>> {
-  interface Storage {
-    void save(String id, String json);
-    String get(String id);
-  }
-
-  private final ObjectMapper mapper = new ObjectMapper();
+private final ObjectMapper mapper = new ObjectMapper();
   private final Storage storage;
   private final Messaging messaging;
 
-  interface Messaging {
-    void publish(String json);
-  }
-
-  public TemperatureLambda() {
+public TemperatureLambda() {
     this(System.getenv("A04_DYNAMODB_TABLE"), System.getenv("A04_S3_BUCKET"),
         System.getenv("A04_SNS_TOPIC_ARN"), System.getenv("A04_SQS_QUEUE_URL"));
   }
@@ -49,6 +42,7 @@ public class TemperatureLambda implements RequestHandler<Map<String, Object>, Ma
   @Override
   @SuppressWarnings("unchecked")
   public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
+    String requestId = context == null ? null : context.getAwsRequestId();
     try {
       if (event == null) {
         return httpResponse(400, "{\"error\":\"Invalid request\"}");
@@ -93,6 +87,7 @@ public class TemperatureLambda implements RequestHandler<Map<String, Object>, Ma
             : UUID.randomUUID().toString();
         if (!isUuid(id)) return httpResponse(400, "{\"error\":\"Invalid id\"}");
         output.put("id", id);
+        TemperatureObservability.log(id, requestId, "Lambda", "REQUEST_RECEIVED", "SUCCESS", 0);
         if (storage != null) {
           storage.save(id, mapper.writeValueAsString(output));
           output.put("storage", Map.of("dynamodb", "stored", "s3", "stored"));
@@ -111,6 +106,7 @@ public class TemperatureLambda implements RequestHandler<Map<String, Object>, Ma
     } catch (IllegalArgumentException e) {
       return httpResponse(400, "{\"error\":\"Invalid request\"}");
     } catch (Exception e) {
+      TemperatureObservability.log(null, requestId, "Lambda", "REQUEST_FAILED", "FAILURE", 0);
       if (context != null) context.getLogger().log("TemperatureLambda failure: " + e.getClass().getSimpleName());
       return httpResponse(500, "{\"error\":\"Operation failed\"}");
     }
