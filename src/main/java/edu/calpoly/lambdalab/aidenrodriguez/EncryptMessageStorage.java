@@ -3,6 +3,8 @@ package edu.calpoly.lambdalab.aidenrodriguez;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.core.retry.RetryPolicy;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -14,7 +16,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 /**
  * Persistent storage for EncryptMessageLambda results.
  */
-final class EncryptMessageStorage implements EncryptMessageLambda.Storage {
+final class EncryptMessageStorage implements Storage {
     private static final String OWNER = "aidenrodriguez";
     private static final String FEATURE = "encrypt";
     private static final String S3_PREFIX = "aidenrodriguez/encrypt/";
@@ -23,9 +25,13 @@ final class EncryptMessageStorage implements EncryptMessageLambda.Storage {
     private final S3Client s3;
     private final String table;
     private final String bucket;
+    @SuppressWarnings("deprecation")
+    private static final ClientOverrideConfiguration SINGLE_ATTEMPT =
+            ClientOverrideConfiguration.builder().retryPolicy(RetryPolicy.none()).build();
 
     EncryptMessageStorage(String table, String bucket) {
-        this(DynamoDbClient.create(), S3Client.create(), table, bucket);
+        this(DynamoDbClient.builder().overrideConfiguration(SINGLE_ATTEMPT).build(),
+                S3Client.builder().overrideConfiguration(SINGLE_ATTEMPT).build(), table, bucket);
     }
 
     EncryptMessageStorage(DynamoDbClient dynamo, S3Client s3, String table, String bucket) {

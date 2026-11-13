@@ -4,7 +4,7 @@ import software.amazon.awssdk.services.sns.SnsClient;
 import software.amazon.awssdk.services.sns.model.PublishRequest;
 
 /** Publishes EncryptMessageLambda events to the configured csc5100-events ARN. */
-final class EncryptMessageMessaging implements EncryptMessageLambda.Messaging {
+final class EncryptMessageMessaging implements Messaging {
     private final SnsClient sns;
     private final String topicArn;
 

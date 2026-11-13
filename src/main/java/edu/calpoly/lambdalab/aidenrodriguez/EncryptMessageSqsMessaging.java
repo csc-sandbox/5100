@@ -4,7 +4,7 @@ import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 /** Sends unchanged A04 routing envelopes to the csc5100-processing queue URL. */
-final class EncryptMessageSqsMessaging implements EncryptMessageLambda.Messaging {
+final class EncryptMessageSqsMessaging implements Messaging {
     private final SqsClient sqs;
     private final String queueUrl;
 
