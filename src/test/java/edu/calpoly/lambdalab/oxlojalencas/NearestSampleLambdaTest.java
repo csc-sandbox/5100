@@ -221,16 +221,19 @@ class NearestSampleLambdaTest {
 
     @Test
     void postReturnsServerErrorWhenPublishFails() {
+        FakeStorage storage = new FakeStorage();
         FakeMessaging messaging = new FakeMessaging();
         messaging.fails = true;
-        NearestSampleLambda lambda =
-                new NearestSampleLambda(new FakeStorage(), messaging);
+        NearestSampleLambda lambda = new NearestSampleLambda(storage, messaging);
 
         Map<String, Object> response =
                 lambda.handleRequest(event(VALID_BODY), null);
 
         assertEquals(500, response.get("statusCode"));
         assertTrue(response.get("body").toString().contains("Could not publish"));
+        // the save finished before the publish failed, so the result stays stored
+        assertEquals(1, storage.results.size());
+        assertTrue(messaging.events.isEmpty());
     }
 
     private static final String SAMPLE_ID =
@@ -264,7 +267,7 @@ class NearestSampleLambdaTest {
     }
 
     /** in-memory storage that can be made to fail. */
-    private static class FakeStorage implements NearestSampleLambda.Storage {
+    private static class FakeStorage implements Storage {
         private final Map<String, String> results = new HashMap<>();
         private boolean fails;
 
@@ -286,7 +289,7 @@ class NearestSampleLambdaTest {
     }
 
     /** records published events and can be made to fail. */
-    private static class FakeMessaging implements NearestSampleLambda.Messaging {
+    private static class FakeMessaging implements Messaging {
         private final List<String> events = new ArrayList<>();
         private boolean fails;
 
