@@ -1,7 +1,9 @@
 package edu.calpoly.lambdalab.hwrd22;
 
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.exception.SdkServiceException;
+import software.amazon.awssdk.core.retry.RetryPolicy;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -31,7 +33,9 @@ final class DataFreshnessStorage implements Storage {
     private final RetryExecutor retryExecutor;
 
     DataFreshnessStorage(String table, String bucket) {
-        this(DynamoDbClient.create(), S3Client.create(), table, bucket, new RetryExecutor(3, failure -> {
+        this(DynamoDbClient.create(), S3Client.builder()
+                .overrideConfiguration(ClientOverrideConfiguration.builder()
+                        .retryPolicy(RetryPolicy.none()).build()).build(), table, bucket, new RetryExecutor(3, failure -> {
             if (failure instanceof SdkClientException) {
                 return true;
             }
