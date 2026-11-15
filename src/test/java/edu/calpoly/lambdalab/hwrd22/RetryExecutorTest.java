@@ -162,19 +162,27 @@ class RetryExecutorTest {
                 S3Client.class.getClassLoader(),
                 new Class<?>[]{S3Client.class},
                 (proxy, method, args) -> {
-                    if (method.getName().equals("putObject")) {
-                        int call = putObjectCalls.incrementAndGet();
-                        if (call <= failures.length) {
-                            throw failures[call - 1];
+                    switch (method.getName()) {
+                        case "putObject" -> {
+                            int call = putObjectCalls.incrementAndGet();
+                            if (call <= failures.length) {
+                                throw failures[call - 1];
+                            }
+                            return PutObjectResponse.builder().build();
                         }
-                        return PutObjectResponse.builder().build();
+                        case "close" -> {
+                            return null;
+                        }
+                        case "toString" -> {
+                            return "FakeS3Client";
+                        }
+                        case "hashCode" -> {
+                            return System.identityHashCode(proxy);
+                        }
+                        case "equals" -> {
+                            return proxy == args[0];
+                        }
                     }
-                    if (method.getName().equals("close")) return null;
-                    if (method.getName().equals("toString")) return "FakeS3Client";
-                    if (method.getName().equals("hashCode")) {
-                        return System.identityHashCode(proxy);
-                    }
-                    if (method.getName().equals("equals")) return proxy == args[0];
 
                     throw new UnsupportedOperationException(method.getName());
                 }
@@ -187,17 +195,15 @@ class RetryExecutorTest {
                 DynamoDbClient.class.getClassLoader(),
                 new Class<?>[]{DynamoDbClient.class},
                 (proxy, method, args) -> {
-                    if (method.getName().equals("putItem")) {
-                        return PutItemResponse.builder().build();
-                    }
-                    if (method.getName().equals("close")) return null;
-                    if (method.getName().equals("toString")) return "FakeDynamoDbClient";
-                    if (method.getName().equals("hashCode")) {
-                        return System.identityHashCode(proxy);
-                    }
-                    if (method.getName().equals("equals")) return proxy == args[0];
+                    return switch (method.getName()) {
+                        case "putItem" -> PutItemResponse.builder().build();
+                        case "close" -> null;
+                        case "toString" -> "FakeDynamoDbClient";
+                        case "hashCode" -> System.identityHashCode(proxy);
+                        case "equals" -> proxy == args[0];
+                        default -> throw new UnsupportedOperationException(method.getName());
+                    };
 
-                    throw new UnsupportedOperationException(method.getName());
                 }
         );
     }
