@@ -21,9 +21,7 @@ final class DataFreshnessMessaging implements Messaging {
     private final String queueUrl;
 
     DataFreshnessMessaging(String topicArn, String queueUrl) {
-        this(SnsClient.create(), SqsClient.builder()
-                .overrideConfiguration(ClientOverrideConfiguration.builder()
-                        .retryPolicy(RetryPolicy.none()).build()).build(), topicArn, queueUrl);
+        this(SnsClient.create(), SqsClient.create(), topicArn, queueUrl);
     }
 
     DataFreshnessMessaging(SnsClient sns, SqsClient sqs, String topicArn, String queueUrl) {
