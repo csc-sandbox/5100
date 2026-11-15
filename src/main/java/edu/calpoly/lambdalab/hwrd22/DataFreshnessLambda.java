@@ -16,27 +16,25 @@ import java.util.UUID;
  * is still fresh according to a user-provided threshold.
  *
  * @author Howard Jiang (hwrd22)
- * @version 1.1 (October 27, 2026)
+ * @version 1.2 (November 9, 2026)
  */
 public class DataFreshnessLambda implements RequestHandler<Map<String, Object>, Map<String, Object>> {
     private final ObjectMapper mapper = new ObjectMapper();
     static final String OPERATION = "DataFreshnessLambda";
-
-    interface Storage {
-        void save(String id, String json);
-
-        String get(String id);
-    }
-
-    interface Messaging {
-        void publish(String json);
-    }
 
     private final Storage storage;
     private final Messaging messaging;
 
     public DataFreshnessLambda() {
         this(createStorage(), createMessaging());
+    }
+
+    // Dependency Injection
+    private DataFreshnessLambda(String table, String bucket, String topicArn, String queueUrl) {
+        this(table != null && !table.isBlank() && bucket != null && !bucket.isBlank()
+                        ? new DataFreshnessStorage(table, bucket) : null,
+                topicArn != null && !topicArn.isBlank() && queueUrl != null && !queueUrl.isBlank()
+                        ? new DataFreshnessMessaging(topicArn, queueUrl) : null);
     }
 
     DataFreshnessLambda(Storage storage) {
@@ -68,6 +66,7 @@ public class DataFreshnessLambda implements RequestHandler<Map<String, Object>, 
 
     @Override
     public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
+        String requestId = context == null ? null : context.getAwsRequestId();
         try {
             if (event == null) {
                 throw new IllegalArgumentException("A request is required.");
@@ -79,11 +78,12 @@ public class DataFreshnessLambda implements RequestHandler<Map<String, Object>, 
                 return id == null ? handleLegacyGet(event) : handleLookup(id);
             }
             if ("POST".equals(method)) {
-                return handlePost(event);
+                return handlePost(event, requestId);
             }
             return httpResponse(405, "{\"error\":\"Method not allowed\"}");
         } catch (Exception e) {
-            return httpResponse(400, "{\"error\":\"Invalid request\"}");
+            DataFreshnessObservability.log(null, requestId, "Lambda", "REQUEST_FAILED", "FAILURE", 0);
+            return httpResponse(500, "{\"error\":\"Invalid request\"}");
         }
     }
 
@@ -109,8 +109,10 @@ public class DataFreshnessLambda implements RequestHandler<Map<String, Object>, 
         return httpResponse(200, mapper.writeValueAsString(output));
     }
 
-    private Map<String, Object> handlePost(Map<String, Object> event) throws Exception {
+    private Map<String, Object> handlePost(Map<String, Object> event, String requestId) throws Exception {
         Map<String, Object> input = requestBody(event);
+
+        boolean fullSuccess = true;
 
         long current = Long.parseLong(input.get("current").toString());
         long sample = Long.parseLong(input.get("sample").toString());
@@ -120,19 +122,27 @@ public class DataFreshnessLambda implements RequestHandler<Map<String, Object>, 
         Map<String, Object> output = determineStatus(current, sample, threshold);
         Map<String, Object> response = new HashMap<>();
         response.put("id", id);
+        DataFreshnessObservability.log(id, requestId, "Lambda", "REQUEST_RECEIVED", "SUCCESS", 0);
         response.put("operation", OPERATION);
         response.put("result", output);
 
-        String json = mapper.writeValueAsString(response);
-
         if (storage != null) {
-            storage.save(id, json);
+            try {
+                storage.save(id, mapper.writeValueAsString(response));
+            } catch (Exception e) {
+                fullSuccess = false;
+            }
+
         }
         if (messaging != null) {
-            messaging.publish(json);
+            try {
+                messaging.publish(mapper.writeValueAsString(response));
+            } catch (Exception e) {
+                fullSuccess = false;
+            }
         }
 
-        return httpResponse(200, json);
+        return httpResponse(fullSuccess ? 200 : 500, mapper.writeValueAsString(response));
     }
 
     private Map<String, Object> handleLookup(String id) {
