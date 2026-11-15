@@ -12,7 +12,7 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
  * @author James Yaguma
  * @version 1.0 (2026-10-27)
  */
-public class LidarSafetyMessaging implements LidarSafetyLambda.Messaging {
+public class LidarSafetyMessaging implements Messaging {
     private static final String OPERATION = "LidarSafetyLambda";
     private final SnsClient sns = SnsClient.create();
     private final SqsClient sqs = SqsClient.create();
@@ -35,17 +35,29 @@ public class LidarSafetyMessaging implements LidarSafetyLambda.Messaging {
         String eventJson = "{\"id\":\"" + id + "\", \"operation\":\"" + OPERATION + "\", \"result\":" + json + "}";
 
         // SNS publish
-        PublishRequest pubReq = PublishRequest.builder()
-            .topicArn(topicArn)
-            .message(eventJson)
-            .build();
-        sns.publish(pubReq);
+        long snsStart = System.nanoTime();
+        try {
+            PublishRequest pubReq = PublishRequest.builder()
+                .topicArn(topicArn)
+                .message(eventJson)
+                .build();
+            sns.publish(pubReq);
+            LidarSafetyObservability.log(id, null, "SNS", "SNS_PUBLISHED", "SUCCESS", snsStart);
+        } catch (Exception e) {
+            LidarSafetyObservability.log(id, null, "SNS", "SNS_PUBLISHED", "FAILURE", snsStart);
+        }
 
         // SQS send message
-        SendMessageRequest sendMsgReq = SendMessageRequest.builder()
-            .queueUrl(queueUrl)
-            .messageBody(eventJson)
-            .build();
-        sqs.sendMessage(sendMsgReq);
+        long sqsStart = System.nanoTime();
+        try {
+            SendMessageRequest sendMsgReq = SendMessageRequest.builder()
+                .queueUrl(queueUrl)
+                .messageBody(eventJson)
+                .build();
+            sqs.sendMessage(sendMsgReq);
+            LidarSafetyObservability.log(id, null, "SQS", "SQS_SENT", "SUCCESS", sqsStart);
+        } catch (Exception e) {
+            LidarSafetyObservability.log(id, null, "SQS", "SQS_SENT", "FAILURE", sqsStart);
+        }
     }
 }
