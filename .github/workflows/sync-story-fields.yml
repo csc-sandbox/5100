@@ -16,6 +16,7 @@ jobs:
           REPO: ${{ github.event.repository.name }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_BODY: ${{ github.event.issue.body }}
+          IS_STORY_PROPOSAL: ${{ contains(github.event.issue.labels.*.name, 'story-proposed') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -47,8 +48,17 @@ jobs:
           echo "Priority: $PRIORITY"
           echo "Estimate: $ESTIMATE"
 
+          # Ordinary tasks and instructor follow-ups do not use the User Story form.
+          # Do not call the Issue Fields API when neither field is present.
+          # Story proposals still require both fields, as does any issue that
+          # explicitly supplies one of the two fields.
+          if [[ -z "$PRIORITY" && -z "$ESTIMATE" && "$IS_STORY_PROPOSAL" != "true" ]]; then
+            echo "::notice::No story fields to sync; skipping this non-story issue."
+            exit 0
+          fi
+
           if [[ -z "$PRIORITY" || -z "$ESTIMATE" ]]; then
-            echo "Could not read Priority or Estimation from the issue."
+            echo "::error::Story field synchronization requires both Priority and Estimation."
             exit 1
           fi
 
