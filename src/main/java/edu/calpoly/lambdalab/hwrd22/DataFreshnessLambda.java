@@ -83,7 +83,7 @@ public class DataFreshnessLambda implements RequestHandler<Map<String, Object>, 
             return httpResponse(405, "{\"error\":\"Method not allowed\"}");
         } catch (Exception e) {
             DataFreshnessObservability.log(null, requestId, "Lambda", "REQUEST_FAILED", "FAILURE", 0);
-            return httpResponse(500, "{\"error\":\"Invalid request\"}");
+            return httpResponse(400, "{\"error\":\"Invalid request\"}");
         }
     }
 
