@@ -1,8 +1,6 @@
 package edu.calpoly.lambdalab.hwrd22;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
-import software.amazon.awssdk.core.retry.RetryPolicy;
 import software.amazon.awssdk.services.sns.SnsClient;
 import software.amazon.awssdk.services.sns.model.PublishRequest;
 import software.amazon.awssdk.services.sqs.SqsClient;
@@ -21,9 +19,7 @@ final class DataFreshnessMessaging implements Messaging {
     private final String queueUrl;
 
     DataFreshnessMessaging(String topicArn, String queueUrl) {
-        this(SnsClient.create(), SqsClient.builder()
-                .overrideConfiguration(ClientOverrideConfiguration.builder()
-                        .retryPolicy(RetryPolicy.none()).build()).build(), topicArn, queueUrl);
+        this(SnsClient.create(), SqsClient.create(), topicArn, queueUrl);
     }
 
     DataFreshnessMessaging(SnsClient sns, SqsClient sqs, String topicArn, String queueUrl) {
