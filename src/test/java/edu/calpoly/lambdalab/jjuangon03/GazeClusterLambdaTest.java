@@ -8,7 +8,10 @@ import edu.calpoly.lambdalab.jjuangon03.GazeClusterLambda;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -134,5 +137,44 @@ class GazeClusterLambdaTest {
         assertEquals(400, post("not json").get("statusCode"));
         assertEquals(400, lambda.handleRequest(new HashMap<>(), null)
                 .get("statusCode"));
+    }
+
+    @Test
+    void postPersistsAndPublishesOneCorrelatedResult() throws Exception {
+        class FakeStorage implements GazeClusterLambda.Storage {
+            String id;
+            String json;
+            public void save(String savedId, String savedJson) { id = savedId; json = savedJson; }
+            public String get(String requestedId) { return requestedId.equals(id) ? json : null; }
+        }
+        FakeStorage storage = new FakeStorage();
+        List<String> messages = new ArrayList<>();
+        UUID id = UUID.fromString("c5f1b1b7-ccf5-4b98-80f9-f1123589a123");
+        GazeClusterLambda reliable = new GazeClusterLambda(storage, messages::add, () -> id);
+
+        Map<String, Object> response = reliable.handleRequest(Map.of("httpMethod", "POST", "body",
+                "{\"points\":[{\"x\":0.5,\"y\":0.5}],\"epsilon\":0.1,\"minPoints\":1}"), null);
+
+        assertEquals(200, response.get("statusCode"));
+        assertEquals(response.get("body"), storage.json);
+        assertEquals(List.of(storage.json), messages);
+        JsonNode body = bodyOf(response);
+        assertEquals(id.toString(), body.path("id").asText());
+        assertEquals("GazeClusterLambda", body.path("operation").asText());
+        assertEquals(1, body.path("result").path("numberOfClusters").asInt());
+    }
+
+    @Test
+    void getsStoredResultByUuidAndReportsMissingResult() {
+        String id = "c5f1b1b7-ccf5-4b98-80f9-f1123589a123";
+        GazeClusterLambda reliable = new GazeClusterLambda(new GazeClusterLambda.Storage() {
+            public void save(String savedId, String json) { }
+            public String get(String requestedId) { return id.equals(requestedId) ? "{\"id\":\"" + id + "\"}" : null; }
+        });
+
+        assertEquals(200, reliable.handleRequest(Map.of("httpMethod", "GET",
+                "queryStringParameters", Map.of("id", id)), null).get("statusCode"));
+        assertEquals(404, reliable.handleRequest(Map.of("httpMethod", "GET",
+                "queryStringParameters", Map.of("id", "14caa8ee-ca63-41f4-b57f-074007b2affc")), null).get("statusCode"));
     }
 }
