@@ -194,16 +194,13 @@ class RetryExecutorTest {
         return (DynamoDbClient) Proxy.newProxyInstance(
                 DynamoDbClient.class.getClassLoader(),
                 new Class<?>[]{DynamoDbClient.class},
-                (proxy, method, args) -> {
-                    return switch (method.getName()) {
-                        case "putItem" -> PutItemResponse.builder().build();
-                        case "close" -> null;
-                        case "toString" -> "FakeDynamoDbClient";
-                        case "hashCode" -> System.identityHashCode(proxy);
-                        case "equals" -> proxy == args[0];
-                        default -> throw new UnsupportedOperationException(method.getName());
-                    };
-
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "putItem" -> PutItemResponse.builder().build();
+                    case "close" -> null;
+                    case "toString" -> "FakeDynamoDbClient";
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    default -> throw new UnsupportedOperationException(method.getName());
                 }
         );
     }
