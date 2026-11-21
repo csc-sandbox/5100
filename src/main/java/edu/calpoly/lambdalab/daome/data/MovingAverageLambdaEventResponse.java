@@ -5,8 +5,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.UUID;
 
-public record MovingAverageLambdaEventResponse(@JsonProperty(value = "id") UUID id,
-                                               @JsonProperty(value = "operation") String operation,
-                                               @JsonProperty(value = "status") EventStatus status,
-                                               @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty(value =
-                                                       "errorMessage") String message) {}
+public record MovingAverageLambdaEventResponse(
+        @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty(value = "id") UUID id,
+        @JsonProperty(value = "operation") String operation,
+        @JsonProperty(value = "status") EventStatus status,
+        @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty(value =
+                "errorMessage") String message) {}
