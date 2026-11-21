@@ -4,16 +4,15 @@ package edu.calpoly.lambdalab.daome;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import edu.calpoly.lambdalab.daome.Exceptions.MessageException;
 import edu.calpoly.lambdalab.daome.data.MovingAverageData;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Tag("MovingAverageLambdaTest")
 public class MovingAverageLambdaTest {
     private static final Map<String, Object> invalidPost1 = Map.of("httpMethod", "POST", "body", """
             {
@@ -27,6 +26,7 @@ public class MovingAverageLambdaTest {
             "window": 3
             }
             """);
+
     private static final Map<String, Object> validPost3 = Map.of("httpMethod", "POST", "body", """
             {
             "samples": [1,2, 3, 4, 5],
@@ -36,26 +36,9 @@ public class MovingAverageLambdaTest {
     private static final Map<String, Object> invalidGet1 =
             Map.of("httpMethod", "GET", "queryStringParameters", Map.of("id", "3f1c9a2e-7b4d-4e8a-9c21-5d6f0b7a1e44"));
 
-    AtomicInteger attempts;
-    AtomicInteger delays;
-    Storage fake;
-    Storage storage;
-
-    private static RetryExecutor threeAttempts(AtomicInteger delays) {
-        return new RetryExecutor(3, failure -> failure instanceof IllegalStateException, delays::incrementAndGet);
-    }
-
-    @BeforeEach
-    void init() {
-        attempts = new AtomicInteger();
-        delays = new AtomicInteger();
-        fake = new MockStorage();
-        storage = new RetryStorage(fake, threeAttempts(delays));
-    }
-
     @Test
     void calculateMovingAverage() {
-        var lambda = new MovingAverageLambda(storage, new MockMessaging());
+        var lambda = new MovingAverageLambda(new MockStorage(), new MockMessaging());
         Map<String, Object> response = lambda.handleRequest(validPost2, null);
         assertEquals(200, response.get("statusCode"));
         assertTrue(response.get("body").toString().contains("\"movingAverage\":[2.0,3.0,4.0]"));
@@ -63,7 +46,7 @@ public class MovingAverageLambdaTest {
 
     @Test
     void calculateMovingAverageWindowBoundary() {
-        var lambda = new MovingAverageLambda(storage, new MockMessaging());
+        var lambda = new MovingAverageLambda(new MockStorage(), new MockMessaging());
         Map<String, Object> response = lambda.handleRequest(validPost3, null);
         assertEquals(200, response.get("statusCode"));
         assertTrue(response.get("body").toString().contains("\"movingAverage\":[3.0]"));
@@ -94,7 +77,8 @@ public class MovingAverageLambdaTest {
     @Test
     void testPostThenGet() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
-        var lambda = new MovingAverageLambda(storage, new MockMessaging());
+        var mockStorage = new MockStorage();
+        var lambda = new MovingAverageLambda(mockStorage, new MockMessaging());
         Map<String, Object> event = new HashMap<>(Map.of("httpMethod",
                 "POST",
                 "body",
@@ -105,10 +89,9 @@ public class MovingAverageLambdaTest {
                 .readValue(response.get("body").toString(), new TypeReference<Map<String, Object>>() {})
                 .get("id");
 
-        assertEquals(mapper.readTree(storage.get(id)), mapper.readTree((String) response.get("body")));
+        assertEquals(mapper.readTree(mockStorage.get(id)), mapper.readTree((String) response.get("body")));
 
-        Map<String, Object> getEvent =
-                Map.of("httpMethod", "GET", "queryStringParameters", Map.of("id", id));
+        Map<String, Object> getEvent = Map.of("httpMethod", "GET", "queryStringParameters", Map.of("id", id));
         Map<String, Object> getResponse = lambda.handleRequest(getEvent, null);
         assertEquals(200, getResponse.get("statusCode"));
     }
@@ -119,34 +102,62 @@ public class MovingAverageLambdaTest {
         queryStringParameters.put("id", "invalid");
         Map<String, Object> getEvent =
                 new HashMap<>(Map.of("httpMethod", "GET", "queryStringParameters", queryStringParameters));
-        var lambda = new MovingAverageLambda(storage, new MockMessaging());
+        var lambda = new MovingAverageLambda(new MockStorage(), new MockMessaging());
         Map<String, Object> getResponse = lambda.handleRequest(getEvent, null);
         assertEquals(400, getResponse.get("statusCode"));
     }
 
     @Test
-    void MessageFail() {
+    void sameObjectsStored() throws JsonProcessingException, RuntimeException {
+        var mapper = new ObjectMapper();
+        var id = UUID.randomUUID();
+        var json = """
+                {
+                "id": "%s",
+                "samples": [1,2, 3, 4, 5],
+                "window": 3,
+                "movingAverage": [2.0, 3.0, 4.0]
+                }
+                """.formatted(id);
+        var mockStorage = new MockStorage();
+        mockStorage.save(id.toString(), json);
+        assertEquals(mapper.readTree(mockStorage.mockS3.get(0)),
+                mapper.readTree((String) mockStorage.mockDynamo.get(id.toString())));
+    }
 
-        Map<String, Object> event = new HashMap<>(Map.of("httpMethod",
-                "POST",
-                "body",
-                "{\"samples\": [1, 2, 3, 4, 5]," + "\"window\": " + "5}"));
-        MovingAverageLambda.Message messaging =
-                (id, json) -> {throw new MessageException("Simulated Message Failure");};
-        var lambda = new MovingAverageLambda(storage, messaging);
-        assertDoesNotThrow(() -> {lambda.handleRequest(event, null);});
+    @Test
+    void verifyDynamoItemStructure() throws JsonProcessingException, RuntimeException {
+        var mapper = new ObjectMapper();
+        var id = UUID.randomUUID();
+        var json = """
+                {
+                "id": "%s",
+                "samples": [1,2, 3, 4, 5],
+                "window": 3,
+                "movingAverage": [2.0, 3.0, 4.0]
+                }
+                """.formatted(id);
+        var mockStorage = new MockStorage();
+        mockStorage.save(id.toString(), json);
+
+        var expected = mapper.createObjectNode();
+        expected.put("owner", "DavidMontiel");
+        expected.put("operation", "MovingAverageLambda");
+        expected.set("responseJson", mapper.readTree(json));
+        var item = mapper.readTree((String) mockStorage.mockDynamo.get(id.toString()));
+        assertEquals(expected, item);
     }
 
     private static final class MockMessaging implements MovingAverageLambda.Message {
-
         @Override
         public void publish(String id, String json) {
         }
     }
 
-    private static class MockStorage implements Storage {
-        public final Map<String, Object> results = new LinkedHashMap<>();
+    private static class MockStorage implements MovingAverageLambda.Storage {
+        public final Map<String, Object> mockDynamo = new LinkedHashMap<>();
         private final ObjectMapper mapper = new ObjectMapper();
+        private final List<String> mockS3 = new ArrayList<>();
 
         public MockStorage() {
         }
@@ -155,10 +166,12 @@ public class MovingAverageLambdaTest {
         public void save(String id, String json) {
             var map = new LinkedHashMap<String, Object>();
             map.put("owner", "DavidMontiel");
-            map.put("operation", "moving-average");
+            map.put("operation", "MovingAverageLambda");
             try {
                 map.put("responseJson", mapper.readTree(json));
-                results.put(id, mapper.writeValueAsString(map));
+                var object = mapper.writeValueAsString(map);
+                mockDynamo.put(id, object);
+                mockS3.add(object);
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
             }
@@ -167,8 +180,11 @@ public class MovingAverageLambdaTest {
 
         @Override
         public String get(String id) {
+            if (id == null) {
+                throw new IllegalArgumentException();
+            }
             var mapper = new ObjectMapper();
-            var json = (String) results.get(id);
+            var json = (String) mockDynamo.get(id);
             Map<String, Object> map;
             try {
                 map = mapper.readValue(json, new TypeReference<>() {});
@@ -177,5 +193,6 @@ public class MovingAverageLambdaTest {
                 throw new RuntimeException(e);
             }
         }
+
     }
 }
