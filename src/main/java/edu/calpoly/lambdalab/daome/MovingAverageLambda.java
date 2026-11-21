@@ -105,6 +105,7 @@ public class MovingAverageLambda implements RequestHandler<Map<String, Object>, 
         return response;
     }
 
+
     public interface Storage {
         void save(String id, String json);
 

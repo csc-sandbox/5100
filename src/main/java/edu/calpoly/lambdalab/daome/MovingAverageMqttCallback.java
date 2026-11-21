@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
 public class MovingAverageMqttCallback implements MqttCallback, MovingAverageAckPublisher, AutoCloseable {
     public static final String OPERATION = "MovingAverageLambda";
     private static final ObjectMapper mapper = new ObjectMapper();
-    private  final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final MqttClient client;
     private final String ackTopic;
 
@@ -42,9 +42,10 @@ public class MovingAverageMqttCallback implements MqttCallback, MovingAverageAck
             handleEvent(json);
         } catch (IOException | MqttException | IllegalArgumentException e) {
             try {
-                publishAcknowledgement("invalid", EventStatus.ERROR, "");
+                publishAcknowledgement(null, EventStatus.ERROR, "");
+
             } catch (JsonProcessingException ex) {
-                System.err.println("Failed to acknowledge");
+                System.err.println("Failed to publish acknowledge");
             }
 
         }
@@ -57,13 +58,14 @@ public class MovingAverageMqttCallback implements MqttCallback, MovingAverageAck
     }
 
     @Override
-    public void publishAcknowledgement(String id, EventStatus status, String errorMessage) throws
+    public void publishAcknowledgement(UUID id, EventStatus status, String errorMessage) throws
             JsonProcessingException, RuntimeException {
 
-        var eventResponse = new MovingAverageLambdaEventResponse(UUID.fromString(id),
-                OPERATION,
-                status,
-                errorMessage);
+        var eventResponse =
+                new MovingAverageLambdaEventResponse(id,
+                        OPERATION,
+                        status,
+                        errorMessage);
 
         var jsonStr = mapper.writeValueAsString(eventResponse);
         executor.execute(() -> {
@@ -80,7 +82,7 @@ public class MovingAverageMqttCallback implements MqttCallback, MovingAverageAck
 
     public void handleEvent(MovingAverageLambdaEvent json) throws MqttException, JsonProcessingException {
         if (json.result() == null) {
-            publishAcknowledgement(String.valueOf(json.id()), EventStatus.ERROR, "error while parsing result");
+            publishAcknowledgement(json.id(), EventStatus.ERROR, "error while parsing result");
         } else {
             System.out.printf("""
                     Id: %s
@@ -88,7 +90,7 @@ public class MovingAverageMqttCallback implements MqttCallback, MovingAverageAck
                     Window: %s
                     Averages:  %s
                     %n""", json.id(), json.result().samples(), json.result().windowSize(), json.result().averages());
-            publishAcknowledgement(json.id().toString(), EventStatus.SUCCESS, null);
+            publishAcknowledgement(json.id(), EventStatus.SUCCESS, null);
         }
     }
 
