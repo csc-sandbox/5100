@@ -109,10 +109,7 @@ public class MovingAverageLambdaTest {
                 .get("id");
 
         assertEquals(mapper.readTree(storage.get(id)), mapper.readTree((String) response.get("body")));
-        assertEquals(mapper.readTree(mockStorage.get(id)), mapper.readTree((String) response.get("body")));
 
-        Map<String, Object> getEvent =
-                Map.of("httpMethod", "GET", "queryStringParameters", Map.of("id", id));
         Map<String, Object> getEvent = Map.of("httpMethod", "GET", "queryStringParameters", Map.of("id", id));
         Map<String, Object> getResponse = lambda.handleRequest(getEvent, null);
         assertEquals(200, getResponse.get("statusCode"));
@@ -190,8 +187,6 @@ public class MovingAverageLambdaTest {
     }
 
     private static class MockStorage implements Storage {
-        public final Map<String, Object> results = new LinkedHashMap<>();
-    private static class MockStorage implements MovingAverageLambda.Storage {
         public final Map<String, Object> mockDynamo = new LinkedHashMap<>();
         private final ObjectMapper mapper = new ObjectMapper();
         private final List<String> mockS3 = new ArrayList<>();

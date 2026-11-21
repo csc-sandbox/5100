@@ -14,9 +14,6 @@ public class MovingAverageMqttCallback implements MqttCallback, AutoCloseable {
     public static final String OPERATION = "MovingAverageLambda";
     private static final ObjectMapper mapper = new ObjectMapper();
     private final AckPublisher ackPublisher;
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final MqttClient client;
-    private final String ackTopic;
 
     public MovingAverageMqttCallback(AckPublisher ackPublisher) {
         this.ackPublisher = ackPublisher;
@@ -36,14 +33,7 @@ public class MovingAverageMqttCallback implements MqttCallback, AutoCloseable {
             json = mapper.readValue(message.getPayload(), MovingAverageLambdaEvent.class);
             handleEvent(json);
         } catch (IOException | MqttException | IllegalArgumentException e) {
-            try {
-                publishAcknowledgement(null, EventStatus.ERROR, "");
-
-            } catch (JsonProcessingException ex) {
-                System.err.println("Failed to publish acknowledge");
-            }
-
-            ackPublisher.publish(String.valueOf(new UUID(0L, 0L)), EventStatus.ERROR, "");
+            ackPublisher.publish(null, EventStatus.ERROR, "");
         }
 
     }
