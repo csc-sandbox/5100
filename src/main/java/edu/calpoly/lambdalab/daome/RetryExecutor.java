@@ -1,6 +1,5 @@
 package edu.calpoly.lambdalab.daome;
 
-import edu.calpoly.lambdalab.daome.Exceptions.StorageException;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.core.exception.SdkException;
 
@@ -28,7 +27,7 @@ public class RetryExecutor {
     }
     static boolean isTransient(RuntimeException e) {
         if (e instanceof AwsServiceException awsServiceException) {
-            return awsServiceException.isThrottlingException() | awsServiceException.statusCode() >= 500;
+            return awsServiceException.isThrottlingException() | awsServiceException.statusCode() <= 500;
         }
         return e instanceof SdkException se && se.retryable();
     }
