@@ -1,7 +1,13 @@
 package edu.calpoly.lambdalab.hwrd22;
 
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.PutItemResponse;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 
+import java.lang.reflect.Proxy;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -96,5 +102,106 @@ class RetryExecutorTest {
         assertThrows(IllegalArgumentException.class, () -> storage.save("", "{}"));
         assertEquals(1, attempts.get());
         assertEquals(0, delays.get());
+    }
+
+    @Test
+    void retriesS3PutObjectTwiceThenSucceedsOnThirdCall() {
+        AtomicInteger putObjectCalls = new AtomicInteger();
+        SdkClientException first = SdkClientException.create("temporary failure 1");
+        SdkClientException second = SdkClientException.create("temporary failure 2");
+
+        S3Client s3 = fakeS3(putObjectCalls, first, second);
+        DataFreshnessStorage storage = storageWith(s3);
+
+        storage.save("event-1", "{\"status\":\"ok\"}");
+
+        assertEquals(3, putObjectCalls.get());
+    }
+
+    @Test
+    void stopsAfterThreeS3PutObjectFailuresAndPropagatesFinalError() {
+        AtomicInteger putObjectCalls = new AtomicInteger();
+        SdkClientException first = SdkClientException.create("temporary failure 1");
+        SdkClientException second = SdkClientException.create("temporary failure 2");
+        SdkClientException last = SdkClientException.create("temporary failure 3");
+
+        S3Client s3 = fakeS3(putObjectCalls, first, second, last);
+        DataFreshnessStorage storage = storageWith(s3);
+
+        SdkClientException thrown = assertThrows(
+                SdkClientException.class,
+                () -> storage.save("event-1", "{\"status\":\"ok\"}")
+        );
+
+        assertSame(last, thrown);
+        assertEquals(3, putObjectCalls.get());
+    }
+
+    private static DataFreshnessStorage storageWith(S3Client s3) {
+        RetryExecutor retryExecutor = new RetryExecutor(
+                3,
+                failure -> failure instanceof SdkClientException,
+                () -> {}
+        );
+
+        return new DataFreshnessStorage(
+                fakeDynamoDb(),
+                s3,
+                "test-table",
+                "test-bucket",
+                retryExecutor
+        );
+    }
+
+    // Class that fakes an S3 client
+    private static S3Client fakeS3(
+            AtomicInteger putObjectCalls,
+            RuntimeException... failures
+    ) {
+        return (S3Client) Proxy.newProxyInstance(
+                S3Client.class.getClassLoader(),
+                new Class<?>[]{S3Client.class},
+                (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "putObject" -> {
+                            int call = putObjectCalls.incrementAndGet();
+                            if (call <= failures.length) {
+                                throw failures[call - 1];
+                            }
+                            return PutObjectResponse.builder().build();
+                        }
+                        case "close" -> {
+                            return null;
+                        }
+                        case "toString" -> {
+                            return "FakeS3Client";
+                        }
+                        case "hashCode" -> {
+                            return System.identityHashCode(proxy);
+                        }
+                        case "equals" -> {
+                            return proxy == args[0];
+                        }
+                    }
+
+                    throw new UnsupportedOperationException(method.getName());
+                }
+        );
+    }
+
+    // Class that fakes a successful DynamoDB client
+    private static DynamoDbClient fakeDynamoDb() {
+        return (DynamoDbClient) Proxy.newProxyInstance(
+                DynamoDbClient.class.getClassLoader(),
+                new Class<?>[]{DynamoDbClient.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "putItem" -> PutItemResponse.builder().build();
+                    case "close" -> null;
+                    case "toString" -> "FakeDynamoDbClient";
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    default -> throw new UnsupportedOperationException(method.getName());
+                }
+        );
     }
 }

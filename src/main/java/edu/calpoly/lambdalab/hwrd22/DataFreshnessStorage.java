@@ -15,6 +15,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Saves Data Freshness results in DynamoDB table and S3 bucket
@@ -46,7 +47,23 @@ final class DataFreshnessStorage implements Storage {
             }
 
             return false;
-        }, () -> {}));
+        }, boundedS3RetryDelay()));
+    }
+
+    private static Runnable boundedS3RetryDelay() {
+        AtomicInteger retryNumber = new AtomicInteger();
+
+        return () -> {
+            int exponent = Math.min(retryNumber.getAndIncrement(), 2);
+            long delayMillis = Math.min(100L << exponent, 400L);
+
+            try {
+                Thread.sleep(delayMillis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted during S3 retry backoff", e);
+            }
+        };
     }
 
     DataFreshnessStorage(DynamoDbClient dynamoDb, S3Client s3, String table, String bucket, RetryExecutor retryExecutor) {
